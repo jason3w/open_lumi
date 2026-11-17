@@ -12,7 +12,33 @@ python3 -m http.server 8000
 
 then open http://localhost:8000.
 
-Here the mode icons are plain grey: the lights still play their real patterns, and the hosted remote shows them in colour. Firmware updates are only offered by the hosted remote. The light firmware isn't part of this repo.
+Here the mode icons are plain grey: the lights still play their real patterns, and the hosted remote shows them in colour. Firmware updates over Bluetooth are only offered by the hosted remote. The firmware's source isn't part of this repo; its released images are on the [Releases](https://github.com/jason3w/open_lumi/releases) page.
+
+## Flash a light over USB
+
+For a light that won't update over Bluetooth, or to go back to an earlier version. Released images are on the [Releases](https://github.com/jason3w/open_lumi/releases) page, one per board: `lumi-1.hex` to `lumi-7.hex`.
+
+1. Install [wchisp](https://github.com/ch32-rs/wchisp/releases), the open-source USB flasher for the light's CH572 chip. On Linux it needs a udev rule or `sudo` to reach the USB device.
+2. Find the light's board: in the remote, Settings, Update boards names it. The wrong board's image leaves the LED or button not working until the right one is flashed.
+3. Run the script (macOS or Linux), then put the light in its bootloader when it asks: plug it into USB and hold the button for 15 seconds, or plug it in with its boot switch on.
+
+```bash
+sh flash.sh
+```
+
+`sh flash.sh 4` skips the question for board 4, and `sh flash.sh 4 26` flashes version 26.
+
+By hand, on Windows too, with the image downloaded and the light in its bootloader: `wchisp info` shows the chip, `wchisp config reset` unlocks one that refuses writes (replug it afterwards), and `wchisp flash lumi-4.hex` writes the image.
+
+| Board | Image |
+|---|---|
+| nanoCH57x | `lumi-1.hex` |
+| nanoCH57x with accelerometer | `lumi-2.hex` |
+| Lumi R3 | `lumi-3.hex` |
+| Lumi R3A | `lumi-4.hex` |
+| Lumi R3D | `lumi-5.hex` |
+| Lumi R3DA | `lumi-6.hex` |
+| Lumi R4C / R4S | `lumi-7.hex` |
 
 ## Licence
 
