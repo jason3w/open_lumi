@@ -195,6 +195,10 @@
   .seg { display: inline-flex; padding: 3px; border-radius: 12px; background: var(--surface); }
   .seg button { min-width: 42px; height: 34px; padding: 0 10px; border-radius: 9px; font-weight: 600; color: var(--muted); }
   .seg button[aria-pressed=true] { background: var(--raised); color: var(--text); }
+  .rule { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; }
+  .rule + .rule { border-top: 1px solid var(--line); }
+  .rule select { flex: 1 1 150px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
+  .rule .link { margin-left: auto; }
   input[type=color] { width: 34px; height: 34px; margin-left: 8px; padding: 0; border: 0; border-radius: 9px; background: none; vertical-align: middle; }
   input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
   input[type=color]::-webkit-color-swatch { border: 1px solid var(--line); border-radius: 9px; }
@@ -279,6 +283,9 @@
   </section>
 
   <section id="tab-throws" hidden>
+    <div class="bar"><span><b>Rules</b> <span class="muted" id="rules-count"></span></span><button class="link" id="rule-add" type="button">Add a rule</button></div>
+    <div id="rules"></div>
+    <p class="muted">Rules need firmware 27. The light runs them itself, with or without the phone: when it is thrown, caught, shaken, bumped (a knock) or stalls (stops moving), it flashes, or changes mode, colour or speed. A flash is each light’s own; the rest change every light paired with it. Up to 8.</p>
     <div class="bar"><span><b>Flash on catch</b><input type="color" id="fx-spark-c" aria-label="Catch flash colour"></span><span class="seg" id="fx-spark"></span></div>
     <div class="bar"><span><b>Flash at the top</b><input type="color" id="fx-top-c" aria-label="Top flash colour"></span><span class="seg" id="fx-top"></span></div>
     <div class="bar"><span><b>New mode on throws</b></span><span class="seg" id="fx-cycle"></span></div>
@@ -393,6 +400,7 @@ function joinGroup(dev, moved) {   // a board takes on the state of the rest of 
   const peer = [...boards].find(([d]) => d !== dev && groupOf(d) === groupOf(dev))?.[1];
   if (peer) write(boards.get(dev), peer.st, peer.custom, peer.prog);
   writeFx(boards.get(dev), fxOf(groupOf(dev)));
+  writeRules(boards.get(dev), rulesOf(groupOf(dev)));
 }
 // Firmware 22: each named group's lights also pair over the radio, on a pairing group kept per group on this phone, so
 // they follow each other with one connected. A group new to it keeps its first light's pairing (that light's partners
@@ -647,7 +655,7 @@ async function attach(dev) {   // connect one board and join it to the others
   const first = await ch.readValue(), b = { ch, srv, busy: Promise.resolve(), len: first.byteLength, sentAt: 0, ...readBoard(first) };
   if (!dev.gatt.connected) throw new Error('lost the link while connecting');   // or reach() gave up on it meanwhile
   if (!boards.size) show(b);
-  boards.set(dev, b); note = '';
+  boards.set(dev, b); note = ''; setRecent(dev, true);
   await boardInfo(b);
   checkLatest();   // this board's type may be new: fetch its latest build
   joinGroup(dev);   // a new board joins its group's current state
@@ -681,25 +689,40 @@ function reach(dev, picked) {   // connect one light, with retries; throws why i
         if (boards.has(dev)) return;   // connected, only the version check was slow
         dev.gatt.disconnect();          // cancel the attempt still pending, so it can't overlap the next one
         if (!picked && trying !== dev) break;   // a picked light is waiting for its turn
-        if (picked || !dev.watchAdvertisements) { await sleep(700); continue; }
-        try {   // a remembered light: wait to hear it before the second try
-          const heard = new Promise(r => dev.addEventListener('advertisementreceived', r, { once: true }));
-          await dev.watchAdvertisements();
-          try { await within(8000, heard); } finally { dev.unwatchAdvertisements?.(); }
-        } catch (e) { break; }
+        await sleep(700);
       }
       throw err;
     } finally { if (trying === dev) trying = null; linkMsg = ''; render(); }
   };
   return linking = linking.then(turn, turn);
 }
+// A remembered light is listened for before it is tried: one that's off or away costs an 8 s attempt that fails, and
+// on Android those get in the way of the lights in use (2026-11-17: four balls connected, a dozen more remembered, the
+// page forever "Connecting to…"). true: heard, so on and in range. false: not heard. null: this browser can't listen.
+async function heard(dev, ms) {
+  if (!dev.watchAdvertisements) return null;
+  const ac = new AbortController();
+  const got = new Promise(r => dev.addEventListener('advertisementreceived', r, { once: true, signal: ac.signal }));
+  try { await dev.watchAdvertisements({ signal: ac.signal }); } catch (e) { ac.abort(); return null; }
+  try { await within(ms, got); return true; } catch (e) { return false; } finally { ac.abort(); }
+}
+let recent = store.get('lumi.recent', []);   // lights connected when the page was last used: all a browser that can't listen tries blind
+function setRecent(d, on) { recent = recent.filter(i => i !== idOf(d)); if (on) recent.push(idOf(d)); store.set('lumi.recent', recent); }
+const LOOKING = 'Looking for your lights…';
 // Chrome's picker returns one board at a time, but boards you've allowed before can all reconnect without it
 async function reconnectKnown(quiet) {
   if (!navigator.bluetooth?.getDevices) return 0;
   const known = (await navigator.bluetooth.getDevices()).filter(d => !boards.has(d)), missed = [];
-  for (const d of known) try { await reach(d); } catch (e) { missed.push(nameOf(d)); }
-  if (!quiet) tell(missed.length ? `${some(missed)} didn’t answer. Check ${missed.length > 1 ? 'they’re' : 'it’s'} on and close by, then tap + to pick ${missed.length > 1 ? 'them' : 'it'}.` : '', true);
-  return known.length - missed.length;
+  if (!quiet && known.length) { linkMsg = LOOKING; render(); }
+  await Promise.all(known.map(async d => {   // all listened for at once; the ones heard connect in turn
+    const on = await heard(d, 5000);
+    if (linkMsg === LOOKING) { linkMsg = ''; render(); }
+    if (on === false || on === null && recent.length && !recent.includes(idOf(d))) return;   // not around: nothing to try, nothing to say
+    try { await reach(d); } catch (e) { missed.push(nameOf(d)); }
+  }));
+  if (!quiet) tell(missed.length ? `${some(missed)} didn’t answer. Check ${missed.length > 1 ? 'they’re' : 'it’s'} on and close by, then tap + to pick ${missed.length > 1 ? 'them' : 'it'}.`
+    : known.length && !boards.size ? 'None of your lights answered. Check they’re on and close by, or tap + to pick one.' : '', true);
+  return known.filter(d => boards.has(d)).length;
 }
 async function comeBack(dev) {   // a light that dropped out by itself (out of range, asleep, flat): try for it for two minutes
   if (updating) return;   // an update reconnects its board itself
@@ -707,6 +730,7 @@ async function comeBack(dev) {   // a light that dropped out by itself (out of r
   for (const s of [1, 3, 6, 12, 25, 40]) {
     await sleep(s * 1000);
     if (updating || document.hidden) return;   // coming back to the page tries again (prune)
+    if (await heard(dev, 4000) === false) continue;
     try { await reach(dev); return tell(''); } catch (e) {}
   }
   tell(`${nameOf(dev)} is out of reach or asleep. Tap + to connect it again.`);
@@ -938,7 +962,54 @@ function setFx(change) {
   for (const [d, b] of boards) if (inSel(d)) writeFx(b, fxOf(groupOf(d)));
   renderFx();
 }
+// ---- rules (firmware 27; sensor lights): when this happens, do that, run on the light. Kept per group on this phone,
+// written to each of its lights, a row at a time (Lumi.ruleBytes) ----
+const rulesByGroup = store.get('lumi.rules', {});   // group name -> [{ when, do, colour, mode, speed, atLeast }]
+const rulesOf = g => rulesByGroup[g] || [];
+const WHEN = [['throw', 'When thrown'], ['catch', 'When caught'], ['top', 'At the top'], ['shake', 'When shaken'], ['bump', 'When bumped'], ['stall', 'When it stalls']];
+const DO = [['flash', 'flash'], ['next', 'next mode'], ['mode', 'go to mode'], ['colour', 'turn'], ['speed', 'speed']];
+const LEAST = { bump: [[700, 'a light tap'], [0, 'a knock'], [2400, 'a hard knock']], stall: [[200, 'still 0.2 s'], [0, 'still 0.3 s'], [500, 'still 0.5 s'], [1000, 'still 1 s'], [2000, 'still 2 s']] };
+function writeRules(b, list) {
+  if (!(b.ver >= 27)) return;
+  for (let i = 0; i < Lumi.RULES; i++) b.busy = b.busy.then(() => b.ch.writeValueWithResponse(Lumi.ruleBytes(i, list[i]))).catch(e => say(e.message, true));
+}
+function setRules(list) {
+  for (const g of new Set([...boards.keys()].filter(inSel).map(groupOf))) rulesByGroup[g] = list;
+  store.set('lumi.rules', rulesByGroup);
+  for (const [d, b] of boards) if (inSel(d)) writeRules(b, list);
+  renderRules();
+}
+function renderRules() {
+  const d = [...boards.keys()].find(inSel), list = rulesOf(d ? groupOf(d) : '');
+  const pick = (opts, value, label, set) => {
+    const sel = el('select'); sel.setAttribute('aria-label', label);
+    sel.append(...opts.map(([v, t]) => Object.assign(el('option'), { value: v, textContent: t })));
+    sel.value = value; sel.onchange = () => set(sel.value);
+    return sel;
+  };
+  const change = (i, c) => setRules(list.map((r, k) => k === i ? { ...r, ...c } : r));
+  $('rules').replaceChildren(...list.map((r, i) => {
+    const row = el('div', 'rule');
+    row.append(pick(WHEN, r.when, 'When', v => change(i, { when: v, atLeast: 0 })));
+    if (LEAST[r.when]) row.append(pick(LEAST[r.when], r.atLeast || 0, 'How much', v => change(i, { atLeast: +v })));
+    row.append(pick(DO, r.do, 'Do', v => change(i, { do: v })));
+    if (r.do === 'flash' || r.do === 'colour') {
+      const c = Object.assign(el('input'), { type: 'color', value: r.colour || '#ffffff' });
+      c.setAttribute('aria-label', 'Colour'); c.onchange = () => change(i, { colour: c.value });   // change, not input: each write is a flash save
+      row.append(c);
+    }
+    if (r.do === 'mode') row.append(pick([...Array(AUTO).keys()].map(m => [m, modeName(m)]), r.mode ?? 0, 'Mode', v => change(i, { mode: +v })));
+    if (r.do === 'speed') row.append(pick([[64, 'half'], [128, 'as made'], [192, 'double']], r.speed ?? 128, 'Speed', v => change(i, { speed: +v })));
+    const x = el('button', 'link danger', 'Remove'); x.type = 'button'; x.onclick = () => setRules(list.filter((_, k) => k !== i));
+    row.append(x);
+    return row;
+  }));
+  $('rules-count').textContent = list.length ? `${list.length} of ${Lumi.RULES}` : 'none';
+  $('rule-add').disabled = list.length >= Lumi.RULES;
+  $('rule-add').onclick = () => setRules([...list, { when: 'bump', do: 'flash', colour: '#ffffff' }]);
+}
 function renderFx() {
+  renderRules();
   const d = [...boards.keys()].find(inSel), f = fxOf(d ? groupOf(d) : '');
   const flag = (id, bit) => segmented(id, [[0, 'Off'], [1, 'On']], f.fx & bit ? 1 : 0, v => setFx({ fx: v ? f.fx | bit : f.fx & ~bit }));
   flag('fx-spark', FX_SPARK); flag('fx-top', FX_TOP); flag('fx-cycle', FX_CYCLE);
@@ -1287,7 +1358,7 @@ function drawLights() {
     const off = el('button', 'link off', 'Disconnect');
     off.disabled = updating;
     off.onclick = async () => {   // and forget it, so the page doesn't connect it again by itself: Connect another brings it back
-      boards.delete(d); d.gatt.disconnect();
+      boards.delete(d); d.gatt.disconnect(); setRecent(d, false);
       try { await d.forget?.(); } catch (e) {}
       render(); drawLights();
     };
@@ -1452,7 +1523,7 @@ async function updateBoard(dev, b) {
     await b.busy; await otaOne(dev, b, img);
     $('ustatus').textContent = `${nameOf(dev)} is restarting with the new firmware. Reconnecting…`;
     await sleep(5000);
-    await reconnectKnown(true);
+    if (await heard(dev, 20000) !== false) await reach(dev).catch(() => {});
     const back = boards.get(dev);
     $('ustatus').textContent = !back ? `${nameOf(dev)} restarted. Reconnect it with + and check it says up to date.`
       : back.ver >= (latest[typeOf(back)]?.version ?? 0) ? `${nameOf(dev)} is up to date (version ${back.ver}).` : `${nameOf(dev)} restarted but is still on version ${back.ver}. The update didn’t take.`;

@@ -38,7 +38,9 @@ Lights with a motion sensor (firmware 26 or later) tell the page what they detec
 | `'freefall'`, `'spin'` | a throw of that kind | |
 | `'catch'` | it lands | `e.flightMs`: how long it was up |
 | `'top'` | the top of the flight, timed from the last flight | |
-| `'shake'` | a shake starts | |
+| `'shake'` | it has been shaken for about 0.4 s | |
+| `'bump'` | a knock: one short jolt with stillness either side (firmware 27) | `e.mg`: how hard, the biggest jump between two reads |
+| `'stall'` | it stops moving after a throw, shake or bump (firmware 27) | `e.stillMs`: how long it has been still |
 | `'change'` | its button, or another light in its group, changed its state | |
 
 Every event has `e.ms` (the light's clock, ms, wraps at 65536) and `e.at` (the page's `performance.now()`). `light.motion` is true once events can arrive. A light first picked by an older page may not show events: pick it again with `Lumi.connect()`.
@@ -52,6 +54,38 @@ light.on('shake', () => light.set({ mode: (light.st.mode + 1) % 26 }));         
 ```
 
 **Timing.** The light's own effects (Flash on catch, New mode on throws) react on the light itself. Your page hears the same moment later: up to one Bluetooth connection event (30-50 ms) plus the phone's own delay, usually 40-80 ms in all. Fine for changing modes; a flash timed off `'catch'` lands just after the light's own one.
+
+## Rules on the light
+
+With firmware 27 a sensor light can keep up to 8 rules, "when this happens, do that", and run them itself: no phone needed once they're set, and no Bluetooth delay. It keeps them through power-off.
+
+```js
+const light = await Lumi.connect();
+await light.rules([
+  { when: 'bump',  do: 'flash',  colour: '#ff0000' },             // a red flash on every knock
+  { when: 'shake', do: 'next' },                                  // shake for the next mode
+  { when: 'stall', atLeast: 500, do: 'colour', colour: '#0000ff' },   // still for half a second: turn blue
+]);
+```
+
+| `when` | `atLeast` (optional) |
+|---|---|
+| `'throw'`, `'top'`, `'shake'` | |
+| `'catch'` | the flight, in ms: only throws that were up this long |
+| `'bump'` | how hard, in mg (default 1200; a light tap is about 700) |
+| `'stall'` | how long still, in ms (default 300). One time for all the rules: the first stall rule's |
+
+| `do` | |
+|---|---|
+| `'flash'` | `colour` for a quarter of a second, on this light only |
+| `'next'` | the next mode |
+| `'mode'` | `mode`: 0-26 |
+| `'colour'` | a steady `colour` |
+| `'speed'` | `speed`: 0-255, 128 as made |
+
+A mode, colour or speed change spreads to the lights paired with it, as a button press does. `light.rules([])` clears them. The remote page keeps its own rules per group (Throws tab) and writes them to each light it connects, so set them in one place.
+
+A bump is known about 80 ms after it happens: the light waits to see it isn't the start of a throw or a shake.
 
 ## Your own moves
 

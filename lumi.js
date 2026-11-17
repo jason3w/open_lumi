@@ -60,13 +60,29 @@
   }
   // ---- gate events (firmware 26, lights with a motion sensor): 4-byte notifications on MOTION_CHAR ----
   // kind, detail, the light's ms (uint16 LE). Only while the light is on. Other lengths there are the bench stream
-  const EVENTS = { 1: 'throw', 2: 'catch', 3: 'top', 4: 'shake' };
-  function parseEvent(v) {   // -> { type, ms, kind ('fall' | 'spin') for a throw, flightMs for a catch }, or null
+  const EVENTS = { 1: 'throw', 2: 'catch', 3: 'top', 4: 'shake', 5: 'bump', 6: 'stall' };   // bump, stall: firmware 27
+  function parseEvent(v) {   // -> { type, ms, kind ('fall' | 'spin') for a throw, flightMs for a catch, mg for a bump, stillMs for a stall }, or null
     if (v.byteLength !== 4 || !EVENTS[v.getUint8(0)]) return null;
     const e = { type: EVENTS[v.getUint8(0)], ms: v.getUint16(2, true) }, d = v.getUint8(1);
     if (e.type === 'throw') e.kind = d === 2 ? 'spin' : 'fall';
     if (e.type === 'catch') e.flightMs = d * 10;
+    if (e.type === 'bump') e.mg = d * 32;
+    if (e.type === 'stall') e.stillMs = d * 20;
     return e;
+  }
+  // ---- rules (firmware 27, lights with a motion sensor): "when this happens, do that", run on the light itself ----
+  // Up to RULES rows, kept by the light, phone or no phone. One 7-byte write on the state characteristic per row:
+  // row, event, the least it must be, action, 3 bytes for the action.
+  // rule: { when: 'throw' | 'catch' | 'top' | 'shake' | 'bump' | 'stall', do: 'flash' | 'next' | 'mode' | 'colour' | 'speed',
+  //         colour: '#rrggbb' (flash, colour), mode: 0-26, speed: 0-255 (128 = as made),
+  //         atLeast: a catch's flight in ms, a bump's size in mg (default 1200), a stall's still time in ms (default 300;
+  //                  one for the whole table: the first stall rule's) }; null clears the row
+  const RULES = 8, ACTIONS = ['', 'flash', 'next', 'mode', 'colour', 'speed'], UNIT = { catch: 10, bump: 32, stall: 20 };
+  function ruleBytes(row, r) {
+    if (!r) return new Uint8Array([row, 0, 0, 0, 0, 0, 0]);
+    const arg = r.do === 'flash' || r.do === 'colour' ? hex2(r.colour || '#ffffff') : [r.do === 'mode' ? r.mode : r.do === 'speed' ? r.speed : 0, 0, 0];
+    return new Uint8Array([row, +Object.keys(EVENTS).find(k => EVENTS[k] === r.when), Math.min(255, Math.round((r.atLeast || 0) / (UNIT[r.when] || 1))),
+                           ACTIONS.indexOf(r.do), ...arg]);
   }
   // ---- your own moves (firmware 26): the builder stream, and matching on the phone ----
   // Stream packet, format 1, 16 bytes: format, sequence, ms of the first sample (uint16 LE), 4 samples of x y z as
@@ -165,8 +181,12 @@
       info: async () => ota ? parseInfo(await ask(cmd(CMD.INFO, 0, new Array(14).fill(0)))) : { ver: 0 },
       find: () => ota && ask(cmd(CMD.FIND)),   // flashes green
       write: (bytes, withResponse) => queue(() => withResponse ? ch.writeValueWithResponse(bytes) : ch.writeValueWithoutResponse(bytes)),
+      // the light's own rules (firmware 27, sensor lights): rules([{ when: 'bump', do: 'flash', colour: '#ff0000' }, ...]),
+      // up to 8; the rest are cleared. See ruleBytes
+      rules: list => Promise.all([...Array(RULES).keys()].map(i => queue(() => ch.writeValueWithResponse(ruleBytes(i, list[i]))))),
       // on('change', cb): its own button presses, and other lights in its group. On a sensor light (firmware 26):
-      // 'throw' (e.kind 'fall' or 'spin'), 'freefall', 'spin' (a throw of that kind), 'catch' (e.flightMs), 'top', 'shake'
+      // 'throw' (e.kind 'fall' or 'spin'), 'freefall', 'spin' (a throw of that kind), 'catch' (e.flightMs), 'top', 'shake',
+      // 'bump' (e.mg), 'stall' (e.stillMs) (27)
       on(type, cb) { (light.handlers[type] ??= []).push(cb); return light; },
       motion: false,   // true once events can arrive
       // the builder stream (firmware 26): cb({ ms, x, y, z }) for every sample, in mg; returns stop()
@@ -223,5 +243,5 @@
 
   window.Lumi = { SERVICE, CHAR, OTA_SERVICE, OTA_CHAR, MOTION_SERVICE, MOTION_CHAR, EVENTS, parseEvent, SLOTS, AUTO, STYLES, FX, CMD, UNPAIRED, NO_CUSTOM, hex2,
                   SAMPLE_MS, FEATURES, parseSamples, segments, dtw, makeTemplate, moveMatcher,
-                  parseState, stateBytes, customBlock, customColours, sleepBytes, radioBytes, fxBytes, cmd, parseInfo, parseHeard, answer, connect };
+                  parseState, stateBytes, customBlock, customColours, sleepBytes, radioBytes, fxBytes, RULES, ruleBytes, cmd, parseInfo, parseHeard, answer, connect };
 })();
