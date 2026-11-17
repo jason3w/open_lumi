@@ -63,7 +63,8 @@
   #orb.off { background: radial-gradient(circle at 50% 42%, var(--line) 0, var(--raised) 34%, var(--raised) 48%, transparent 71%); }
   #orb.off::after { opacity: 0; }
   #now { margin-top: 6px; font-size: 24px; font-weight: 800; letter-spacing: -.01em; text-align: center; }
-  #sub { font-size: 13px; color: var(--muted); min-height: 19px; text-align: center; }
+  #sub { font-size: 13px; color: var(--muted); min-height: 19px; text-align: center; padding: 0 16px; }
+  #sub.err { color: var(--danger); }
 
   /* sliders */
   .sliders { display: grid; gap: 4px; margin: 14px 0 6px; }
@@ -578,11 +579,12 @@ function renderTop() {
   if ($('lightsheet').open) drawLights();
   $('ctl').hidden = !boards.size;
   $('orb').setAttribute('aria-label', !boards.size ? 'Connect' : st.on ? 'Turn off' : 'Turn on');
-  if (!boards.size) { $('now').textContent = 'Not connected'; $('sub').textContent = NO_BT || 'Tap the light to connect your boards'; return; }
+  $('sub').classList.toggle('err', !NO_BT && !linkMsg && !!note && noteErr);
+  if (!boards.size) { $('now').textContent = 'Not connected'; $('sub').textContent = NO_BT || linkMsg || note || 'Tap the light to connect your boards'; return; }
   const n = custom[0] & 15, m = made.find(isLook), here = [...boards.keys()].filter(inSel).length;
   $('now').textContent = !st.on ? 'Off' : m ? m.name : n ? 'Your own light' : modeName(st.mode);
-  $('sub').textContent = !st.on ? 'Tap the light to turn it on' : playing ? `Playing ${playing.name}`
-    : here > 1 ? `${here} boards in step` : 'Tap the light to turn it off';
+  $('sub').textContent = linkMsg || note || (!st.on ? 'Tap the light to turn it on' : playing ? `Playing ${playing.name}`
+    : here > 1 ? `${here} boards in step` : 'Tap the light to turn it off');
 }
 function renderSliders() {
   $('bright').value = st.bright; $('hue').value = st.hue; $('speed').value = st.speed;
@@ -630,7 +632,7 @@ function moveName(d) {   // names were kept by device id, which radio-heard ligh
 async function attach(dev) {   // connect one board and join it to the others
   if (boards.has(dev)) return;
   moveName(dev);
-  dev.ongattserverdisconnected = () => { boards.delete(dev); render(); };
+  dev.ongattserverdisconnected = () => { if (boards.delete(dev)) { render(); comeBack(dev); } };   // not for Disconnect or a failed try: those take it off the list first
   const srv = await dev.gatt.connect();
   const ch = await (await srv.getPrimaryService(SERVICE)).getCharacteristic(CHAR);
   ch.addEventListener('characteristicvaluechanged', e => onNotify(dev, e.target.value));
@@ -638,65 +640,102 @@ async function attach(dev) {   // connect one board and join it to the others
   const first = await ch.readValue(), b = { ch, srv, busy: Promise.resolve(), len: first.byteLength, sentAt: 0, ...readBoard(first) };
   if (!dev.gatt.connected) throw new Error('lost the link while connecting');   // or reach() gave up on it meanwhile
   if (!boards.size) show(b);
-  boards.set(dev, b);
+  boards.set(dev, b); note = '';
   await boardInfo(b);
   checkLatest();   // this board's type may be new: fetch its latest build
   joinGroup(dev);   // a new board joins its group's current state
   render();
 }
 const within = (ms, p) => Promise.race([p, sleep(ms).then(() => { throw new Error('timed out'); })]);
-async function reach(dev) {   // a remembered board: connect directly, or wait to hear it advertise first
-  try { return await within(6000, attach(dev)); } catch (e) {
-    if (boards.has(dev)) return;   // connected, only the version check was slow
-    dev.gatt.disconnect();         // cancel the attempt still pending, so it can't overlap the next one
-  }
-  if (!dev.watchAdvertisements) throw new Error('not in range');
-  const heard = new Promise(r => dev.addEventListener('advertisementreceived', r, { once: true }));
-  await dev.watchAdvertisements();
-  try { await within(8000, heard); } finally { dev.unwatchAdvertisements?.(); }
-  return within(8000, attach(dev));
+// Under the light: what is connecting now, else how the last try went. (The status line further down is hidden with
+// the controls until a light connects, which is where "Couldn't connect" used to go: nothing showed.)
+let linkMsg = '', note = '', noteErr = false, noteT = 0;
+function tell(t, err) {
+  note = t || ''; noteErr = !!err; render();
+  clearTimeout(noteT);   // with lights connected the line goes back to its usual text; with none it stays, as the only explanation
+  if (t) noteT = setTimeout(() => boards.size && tell(''), 12000);
 }
-// Chrome's picker returns one board at a time, but boards you've allowed before can all reconnect without it.
-// One at a time: Android's Bluetooth stack fails or stalls connections started together, worse past 3 or 4 boards.
-async function reconnectKnown() {
+const some = names => names.length > 2 ? `${names[0]} and ${names.length - 1} more` : names.join(' and ');
+const why = e => (e?.message || 'no answer').split('.')[0];
+// One connection attempt at a time, whoever asks: Android's Bluetooth stack fails or stalls ones started together
+// (worse past 3 or 4 boards), and two on one light undo each other. A light picked by hand goes first: it cuts short
+// the remembered light being tried now.
+let linking = Promise.resolve(), trying = null;
+function reach(dev, picked) {   // connect one light, with retries; throws why it couldn't
+  if (picked && trying) { const d = trying; trying = null; d.gatt.disconnect(); }
+  const turn = async () => {
+    let err = new Error('no answer');
+    try {
+      for (let t = 0; t < (picked ? 3 : 2); t++) {
+        if (boards.has(dev)) return;
+        if (!picked) trying = dev;
+        linkMsg = `Connecting to ${nameOf(dev)}${t ? `, try ${t + 1}` : ''}…`; render();
+        try { return await within(picked ? 10000 : 8000, attach(dev)); } catch (e) { err = e; }
+        if (boards.has(dev)) return;   // connected, only the version check was slow
+        dev.gatt.disconnect();          // cancel the attempt still pending, so it can't overlap the next one
+        if (!picked && trying !== dev) break;   // a picked light is waiting for its turn
+        if (picked || !dev.watchAdvertisements) { await sleep(700); continue; }
+        try {   // a remembered light: wait to hear it before the second try
+          const heard = new Promise(r => dev.addEventListener('advertisementreceived', r, { once: true }));
+          await dev.watchAdvertisements();
+          try { await within(8000, heard); } finally { dev.unwatchAdvertisements?.(); }
+        } catch (e) { break; }
+      }
+      throw err;
+    } finally { if (trying === dev) trying = null; linkMsg = ''; render(); }
+  };
+  return linking = linking.then(turn, turn);
+}
+// Chrome's picker returns one board at a time, but boards you've allowed before can all reconnect without it
+async function reconnectKnown(quiet) {
   if (!navigator.bluetooth?.getDevices) return 0;
-  const known = (await navigator.bluetooth.getDevices()).filter(d => !boards.has(d));
-  let ok = 0;
-  for (const [i, d] of known.entries()) {
-    $('sub').textContent = `Connecting to ${nameOf(d)}, ${i + 1} of ${known.length}…`;
-    try { await reach(d); ok++; } catch (e) {}
+  const known = (await navigator.bluetooth.getDevices()).filter(d => !boards.has(d)), missed = [];
+  for (const d of known) try { await reach(d); } catch (e) { missed.push(nameOf(d)); }
+  if (!quiet) tell(missed.length ? `${some(missed)} didn’t answer. Check ${missed.length > 1 ? 'they’re' : 'it’s'} on and close by, then tap + to pick ${missed.length > 1 ? 'them' : 'it'}.` : '', true);
+  return known.length - missed.length;
+}
+async function comeBack(dev) {   // a light that dropped out by itself (out of range, asleep, flat): try for it for two minutes
+  if (updating) return;   // an update reconnects its board itself
+  tell(`${nameOf(dev)} dropped out. Trying to get it back…`);
+  for (const s of [1, 3, 6, 12, 25, 40]) {
+    await sleep(s * 1000);
+    if (updating || document.hidden) return;   // coming back to the page tries again (prune)
+    try { await reach(dev); return tell(''); } catch (e) {}
   }
-  render();
-  return ok;
+  tell(`${nameOf(dev)} is out of reach or asleep. Tap + to connect it again.`);
 }
 // A light can stay listed after its link is gone (2026-10-30: four balls woken from sleep, every tap failing with
-// "GATT Server is disconnected"). Drop those and reconnect them, one pass at a time
+// "GATT Server is disconnected"). Drop those, and reconnect every remembered light that isn't connected, one pass at a time
 let pruning = null;
 function prune() {
   if (updating) return;   // an update reconnects its board itself
   return pruning ??= (async () => {
     const gone = [...boards.keys()].filter(d => !d.gatt.connected);
     for (const d of gone) boards.delete(d);
-    if (gone.length) { render(); await reconnectKnown(); }
+    if (gone.length) render();
+    await reconnectKnown(true);
   })().catch(() => {}).finally(() => { pruning = null; });
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) prune(); });
 async function pickBoard(name) {   // name: just that light in the picker (a radio-heard one)
   if (NO_BT) return render();
+  let dev;
   try {
     const filter = typeof name === 'string' ? { services: [SERVICE], name } : { services: [SERVICE] };
-    const dev = await navigator.bluetooth.requestDevice({ filters: [filter], optionalServices: [OTA_SERVICE] });
-    $('sub').textContent = `Connecting to ${nameOf(dev)}…`;
-    await attach(dev);
+    dev = await navigator.bluetooth.requestDevice({ filters: [filter], optionalServices: [OTA_SERVICE] });
+    if (boards.has(dev)) return tell(`${nameOf(dev)} is already connected.`);
+    tell('');
+    await reach(dev, true);
   } catch (e) {
-    if (e.name !== 'NotFoundError') say(`Couldn’t connect: ${e.message}`, true);   // NotFoundError: the picker was closed
-    render();
+    if (dev) tell(`Couldn’t connect to ${nameOf(dev)} (${why(e)}). Check it’s on and close by, then tap + to try again.`, true);
+    else if (!/cancel/i.test(e.message)) tell(`Couldn’t open the Bluetooth list: ${why(e)}.`, true);   // cancelled: the picker was closed
   }
 }
 async function connect() {   // the orb: every board you've used before, or the picker the first time
   const known = navigator.bluetooth?.getDevices ? (await navigator.bluetooth.getDevices()).filter(d => !boards.has(d)) : [];
   if (!known.length) return pickBoard();
-  if (!await reconnectKnown()) { say('No remembered boards answered. Check they’re on, or tap + to pick one.', true); render(); }
+  tell('');
+  await reconnectKnown();
 }
 
 // ---- describe a light: Claude designs it, it plays, and it's saved under Mine ----
@@ -1406,7 +1445,7 @@ async function updateBoard(dev, b) {
     await b.busy; await otaOne(dev, b, img);
     $('ustatus').textContent = `${nameOf(dev)} is restarting with the new firmware. Reconnecting…`;
     await sleep(5000);
-    await reconnectKnown();
+    await reconnectKnown(true);
     const back = boards.get(dev);
     $('ustatus').textContent = !back ? `${nameOf(dev)} restarted. Reconnect it with + and check it says up to date.`
       : back.ver >= (latest[typeOf(back)]?.version ?? 0) ? `${nameOf(dev)} is up to date (version ${back.ver}).` : `${nameOf(dev)} restarted but is still on version ${back.ver}. The update didn’t take.`;
