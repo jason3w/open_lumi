@@ -1,0 +1,1426 @@
+<!doctype html>
+<!-- Lumi remote: Chrome on Android, Bluefy on iPhone, served over https (Web Bluetooth).
+     The light's Bluetooth blocks are in lumi.js; see BUILDERS.md. Licence: LICENSE.md (PolyForm Noncommercial 1.0.0). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16121f">
+<link rel="manifest" href="manifest.webmanifest"><!-- installable: tools/app/, copied next to the page by make publish -->
+<link rel="icon" href="icon-192.png">
+<title>Lumi Remote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #16121f; --surface: #211b2f; --raised: #2d2541; --line: #3a3150;
+    --text: #f2edfb; --muted: #9d94b5; --danger: #ff8a8a;
+    --glow: #8a7bff;                     /* the light's current colour, set from the orb */
+    --r-tile: 16px; --r-sheet: 24px; --r-ctl: 12px;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f4f1f9; --surface: #ffffff; --raised: #ebe6f3; --line: #d9d2e6;
+            --text: #1e1830; --muted: #6c6385; --danger: #c43c3c; color-scheme: light; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  html, body { overscroll-behavior-y: none; }   /* no pull-to-refresh: a reload drops every light's connection */
+  body {
+    margin: 0 auto; background: var(--bg); color: var(--text);
+    font: 400 15px/1.45 "Bricolage Grotesque", system-ui, sans-serif; font-optical-sizing: auto;
+    padding: 0 16px calc(96px + env(safe-area-inset-bottom));
+    max-width: 520px; overflow-x: hidden;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { border: 0; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  :focus-visible { outline: 2px solid var(--glow); outline-offset: 2px; }
+  .muted { color: var(--muted); }
+
+  /* top bar */
+  header { display: flex; align-items: center; gap: 8px; padding: 14px 0 4px; }
+  /* tools/lumi_logo-white.png at 96 px tall (sips --resampleHeight 96), as a mask so it takes the text colour in either theme */
+  .wordmark { --logo: url(data:image/png;base64,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); width: 109px; height: 30px; margin-right: auto; flex: none;
+              background: var(--text); -webkit-mask: var(--logo) left center / contain no-repeat; mask: var(--logo) left center / contain no-repeat; }
+  .chip { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 17px;
+          background: var(--surface); font-size: 13px; font-weight: 600; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--glow); }
+  .chip.old { color: var(--danger); }
+  .chip.old i { background: var(--danger); }
+  .iconbtn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; background: var(--surface); }
+  .iconbtn svg { width: 20px; height: 20px; }
+  #groups { display: flex; width: fit-content; max-width: 100%; margin: 10px auto 0; overflow-x: auto; }
+  #groups button { flex: none; white-space: nowrap; }
+
+  /* the orb */
+  .stage { display: grid; justify-items: center; padding: 18px 0 8px; }
+  #orb { width: 196px; height: 196px; border-radius: 50%; position: relative; transition: transform .25s;
+         background: radial-gradient(circle at 50% 42%, #fff8 0, var(--c, #333) 22%, var(--c, #333) 48%, transparent 71%); }
+  #orb::after { content: ""; position: absolute; inset: 18%; border-radius: 50%; box-shadow: 0 0 70px 26px var(--c, transparent); opacity: .55; }
+  #orb:active { transform: scale(.96); }
+  #orb.off { background: radial-gradient(circle at 50% 42%, var(--line) 0, var(--raised) 34%, var(--raised) 48%, transparent 71%); }
+  #orb.off::after { opacity: 0; }
+  #now { margin-top: 6px; font-size: 24px; font-weight: 800; letter-spacing: -.01em; text-align: center; }
+  #sub { font-size: 13px; color: var(--muted); min-height: 19px; text-align: center; }
+
+  /* sliders */
+  .sliders { display: grid; gap: 4px; margin: 14px 0 6px; }
+  .slider { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 8px; }
+  .slider span { font-weight: 600; }
+  .slider .val { font-size: 13px; color: var(--muted); padding: 6px 2px; min-width: 64px; text-align: right; }
+  .slider .val.changed { color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
+  input[type=range] { grid-column: 1 / -1; width: 100%; height: 34px; margin: 0; background: none; appearance: none; -webkit-appearance: none; }
+  input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: var(--track, var(--raised)); }
+  input[type=range]::-moz-range-track { height: 8px; border-radius: 4px; background: var(--track, var(--raised)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -9px; border-radius: 50%;
+    background: var(--glow); border: 3px solid var(--bg); box-shadow: 0 0 0 1px var(--line); }
+  input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--glow); border: 3px solid var(--bg); }
+  #hue { --track: linear-gradient(90deg, #f33, #fd3, #3e5, #3de, #45f, #e4f, #f33); }
+
+  /* describe a light */
+  .ask { display: flex; gap: 6px; align-items: center; padding: 6px; margin: 14px 0 4px; border-radius: 28px; background: var(--surface); }
+  .ask input { flex: 1; min-width: 0; border: 0; background: none; padding: 8px 10px; outline: none; }
+  .ask input::placeholder { color: var(--muted); }
+  #mic { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; background: var(--raised); }
+  #mic.listening { background: var(--glow); color: #000; }
+  #mic svg { width: 20px; height: 20px; }
+  #askstatus { font-size: 13px; color: var(--muted); min-height: 19px; padding: 0 12px; }
+  #askstatus.err { color: var(--danger); }
+
+  /* tabs */
+  .tabs { display: flex; gap: 4px; margin: 16px 0 12px; padding: 4px; border-radius: 14px; background: var(--surface); }
+  .tabs button { flex: 1; height: 38px; border-radius: 10px; font-weight: 600; color: var(--muted); }
+  .tabs button[aria-selected=true] { background: var(--raised); color: var(--text); }
+
+  /* tiles */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+  .tile { display: grid; justify-items: center; align-content: start; gap: 6px; padding: 10px 4px 9px; border-radius: var(--r-tile);
+          background: var(--surface); position: relative; min-width: 0; }
+  .tile b { font-weight: 600; font-size: 12px; line-height: 1.2; text-align: center; overflow-wrap: anywhere; }
+  .tile.sel { background: var(--raised); box-shadow: inset 0 0 0 2px var(--glow); }
+  .tile .x { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 12px; display: grid; place-items: center;
+             background: var(--bg); color: var(--danger); font-size: 13px; }
+  .icon { width: 40px; height: 40px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px #8885; }
+  .icon.sm { width: 28px; height: 28px; }
+  .icon.xs { width: 18px; height: 18px; }
+  .group { font-size: 13px; color: var(--muted); margin: 16px 2px 8px; }
+  .group:first-child { margin-top: 0; }
+  .empty { padding: 22px 16px; border-radius: var(--r-tile); border: 1.5px dashed var(--line); color: var(--muted); text-align: center; }
+  .bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; min-height: 36px; }
+  .link { color: var(--text); font-weight: 600; padding: 8px 4px; }
+
+  /* playlists */
+  .plist { display: grid; gap: 8px; margin-bottom: 12px; }
+  .pl { display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: var(--r-tile); background: var(--surface); }
+  .pl .meta { flex: 1; min-width: 0; text-align: left; }
+  .pl .name { font-weight: 600; font-size: 16px; }
+  .pl .info { font-size: 13px; color: var(--muted); }
+  .pl .strip { display: flex; gap: 3px; margin-top: 6px; flex-wrap: wrap; }
+  .play { width: 48px; height: 48px; border-radius: 24px; display: grid; place-items: center; background: var(--raised); flex: none; }
+  .play.on { background: var(--glow); color: #000; }
+  .play svg { width: 20px; height: 20px; }
+  .primary { height: 48px; border-radius: 24px; padding: 0 22px; font-weight: 600; background: var(--text); color: var(--bg); }
+  .secondary { height: 48px; border-radius: 24px; padding: 0 22px; font-weight: 600; background: var(--raised); }
+  .wide { width: 100%; }
+  .danger { color: var(--danger); }
+
+  /* now playing */
+  #nowplaying { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom));
+    width: min(488px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px;
+    border-radius: 30px; background: var(--raised); box-shadow: 0 8px 30px #0006; z-index: 5; }
+  #nowplaying .meta { flex: 1; min-width: 0; font-size: 14px; }
+  #np-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #np-prog { width: 100%; height: 3px; display: block; margin-top: 5px; appearance: none; -webkit-appearance: none; border: 0; border-radius: 2px; background: var(--line); }
+  #np-prog::-webkit-progress-bar { background: var(--line); border-radius: 2px; }
+  #np-prog::-webkit-progress-value { background: var(--glow); border-radius: 2px; }
+  #np-prog::-moz-progress-bar { background: var(--glow); }
+
+  /* sheets */
+  dialog { border: 0; padding: 0; margin: auto auto 0; width: 100%; max-width: 520px; max-height: 88vh; background: var(--surface); color: var(--text);
+           border-radius: var(--r-sheet) var(--r-sheet) 0 0; }
+  dialog[open] { animation: rise .22s ease-out; }
+  @keyframes rise { from { transform: translateY(40px); opacity: 0; } }
+  dialog::backdrop { background: #0009; }
+  .sheet { padding: 10px 16px calc(20px + env(safe-area-inset-bottom)); display: grid; gap: 12px; }
+  .grab { width: 40px; height: 4px; border-radius: 2px; background: var(--line); justify-self: center; }
+  .sheet h2 { margin: 0; font-size: 20px; font-weight: 800; }
+  .sheet h3 { margin: 6px 0 0; font-size: 16px; font-weight: 600; }
+  .sheet p { margin: 0; }
+  .field { width: 100%; height: 48px; padding: 0 14px; border-radius: var(--r-ctl); border: 1px solid var(--line); background: var(--bg); }
+  .steps { display: grid; gap: 6px; }
+  .step { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: var(--r-ctl); background: var(--bg); }
+  .step.now { box-shadow: inset 0 0 0 2px var(--glow); }
+  .step .name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px 0; }
+  .dur { display: flex; align-items: center; border-radius: 10px; background: var(--raised); }
+  .dur button { width: 32px; height: 36px; font-size: 18px; }
+  .dur output { min-width: 46px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .mini { width: 30px; height: 36px; border-radius: 10px; color: var(--muted); }
+  .mini:disabled { opacity: .3; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > .grow { flex: 1; min-width: 0; }
+  .fwrow { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-radius: var(--r-ctl); background: var(--bg); }
+  .fwrow .meta { flex: 1; min-width: 0; }
+  .fwrow .name { font-weight: 600; }
+  .fwrow button.name { display: block; max-width: 100%; padding: 0; text-align: left; overflow-wrap: anywhere; }
+  .fwrow .name .muted { font-weight: 400; font-size: 13px; }
+  .fwrow .info { font-size: 13px; color: var(--muted); }
+  .fwrow .info.warn { color: var(--danger); }
+  .fwrow .off { margin: 6px 0 0 4px; padding: 6px 4px; font-size: 13px; color: var(--muted); }
+  .fwrow .off:disabled { opacity: .4; }
+  .fwrow .grp { height: 32px; max-width: 100%; margin-top: 6px; padding: 0 10px; border: 0; border-radius: 16px; background: var(--raised); font-size: 13px; font-weight: 600; }
+  .batt { display: inline-block; position: relative; width: 22px; height: 11px; margin-right: 6px; vertical-align: -1px;
+          border: 1.5px solid currentColor; border-radius: 3px; }
+  .batt::after { content: ""; position: absolute; right: -4px; top: 2.5px; width: 2px; height: 3px; border-radius: 0 1px 1px 0; background: currentColor; }
+  .batt i { position: absolute; left: 1.5px; top: 1.5px; bottom: 1.5px; border-radius: 1px; background: currentColor; }
+  .small { height: 40px; border-radius: 20px; padding: 0 14px; font-weight: 600; background: var(--raised); }
+  .small.go { background: var(--text); color: var(--bg); }
+  .small:disabled { opacity: .4; }
+  summary { cursor: pointer; padding: 4px 0; }
+  #uprog { width: 100%; }
+
+  /* music */
+  .songpick { display: grid; gap: 2px; padding: 16px; border-radius: var(--r-tile); background: var(--surface); cursor: pointer; margin-bottom: 12px; }
+  .songpick #songname { font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .songpick .muted { font-size: 13px; }
+  #beatstrip { width: 100%; height: 64px; display: block; border-radius: var(--r-ctl); background: var(--surface); }
+  #audio { width: 100%; margin-top: 10px; }
+  .seg { display: inline-flex; padding: 3px; border-radius: 12px; background: var(--surface); }
+  .seg button { min-width: 42px; height: 34px; padding: 0 10px; border-radius: 9px; font-weight: 600; color: var(--muted); }
+  .seg button[aria-pressed=true] { background: var(--raised); color: var(--text); }
+  input[type=color] { width: 34px; height: 34px; margin-left: 8px; padding: 0; border: 0; border-radius: 9px; background: none; vertical-align: middle; }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type=color]::-webkit-color-swatch { border: 1px solid var(--line); border-radius: 9px; }
+  input[type=color]::-moz-color-swatch { border: 1px solid var(--line); border-radius: 9px; }
+  .tile .n { position: absolute; top: 4px; left: 6px; font-size: 11px; font-weight: 800; color: var(--glow); }
+  .tile.off { opacity: .45; }
+
+  @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } #orb { transition: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="wordmark" role="img" aria-label="Lumi"></div>
+  <button id="lights" class="chip" hidden><i></i><span id="lightsn"></span><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+  <button id="add" class="iconbtn" aria-label="Connect a board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+  <button id="gear" class="iconbtn" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg></button>
+</header>
+<nav class="seg" id="groups" aria-label="Group" hidden></nav>
+
+<section class="stage">
+  <button id="orb" class="off" aria-label="Connect"></button>
+  <div id="now">Not connected</div>
+  <div id="sub">Tap the light to connect your boards</div>
+</section>
+
+<div id="ctl" hidden>
+  <div class="sliders">
+    <label class="slider"><span>Brightness</span><span class="val" id="brightv"></span>
+      <input id="bright" type="range" min="1" max="255" value="128"></label>
+    <label class="slider"><span>Colour</span><button class="val" id="huev" type="button" title="Tap to reset"></button>
+      <input id="hue" type="range" min="0" max="255" value="0"></label>
+    <label class="slider"><span>Speed</span><button class="val" id="speedv" type="button" title="Tap to reset"></button>
+      <input id="speed" type="range" min="0" max="255" value="128"></label>
+    <button class="link" id="savelook" type="button" style="justify-self:end">Save as preset</button>
+  </div>
+
+  <form class="ask" id="askform">
+    <input id="ask" autocomplete="off" enterkeyhint="go" placeholder="Describe your own light">
+    <button id="mic" type="button" aria-label="Speak"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+  </form>
+  <div id="askstatus"></div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="modes">Modes</button>
+    <button role="tab" aria-selected="false" data-tab="mine">Mine</button>
+    <button role="tab" aria-selected="false" data-tab="lists">Playlists</button>
+    <button role="tab" aria-selected="false" data-tab="music">Music</button>
+    <button role="tab" aria-selected="false" data-tab="throws">Throws</button>
+  </nav>
+
+  <section id="tab-modes">
+    <div class="bar"><span><b>Set</b></span><span class="seg" id="set"></span></div>
+    <div class="group">Patterns</div><div class="grid" id="g-patterns"></div>
+    <div class="group">Two colours</div><div class="grid" id="g-alter"></div>
+    <div class="group">Solid</div><div class="grid" id="g-solid"></div>
+  </section>
+
+  <section id="tab-mine" hidden>
+    <div class="bar"><span class="muted" id="minecount"></span><button class="link" id="editmine">Edit</button></div>
+    <div class="grid" id="g-mine"></div>
+    <div class="empty" id="mine-empty">Lights you describe above, and presets you save, are kept here.</div>
+  </section>
+
+  <section id="tab-lists" hidden>
+    <div class="plist" id="plist"></div>
+    <div class="empty" id="lists-empty" style="margin-bottom:12px">No playlists yet. A playlist steps through modes and your own lights on a timer.</div>
+    <button class="primary wide" id="newlist">New playlist</button>
+  </section>
+
+  <section id="tab-music" hidden>
+    <label class="songpick"><input id="song" type="file" accept="audio/*" hidden><span id="songname">Choose a song</span><span class="muted" id="songmeta">The lights change on its beat</span></label>
+    <div id="songbody" hidden>
+      <canvas id="beatstrip" height="64" aria-label="Song energy with beat marks"></canvas>
+      <audio id="audio" controls preload="auto"></audio>
+      <div class="bar" style="margin-top:14px"><span><b>Change every</b></span><span class="seg" id="every"></span></div>
+      <div class="bar"><span><b>Order</b></span><span class="seg" id="order"></span></div>
+      <label class="slider"><span>Lights early by</span><span class="val" id="leadv"></span>
+        <input id="lead" type="range" min="0" max="400" step="10" value="120"></label>
+      <div class="bar" style="margin-top:12px"><span><b>Lights to use</b> <span class="muted" id="pickcount"></span></span><button class="link" id="suggest">Use suggestions</button></div>
+      <div class="grid" id="g-picks"></div>
+    </div>
+  </section>
+
+  <section id="tab-throws" hidden>
+    <div class="bar"><span><b>Flash on catch</b><input type="color" id="fx-spark-c" aria-label="Catch flash colour"></span><span class="seg" id="fx-spark"></span></div>
+    <div class="bar"><span><b>Flash at the top</b><input type="color" id="fx-top-c" aria-label="Top flash colour"></span><span class="seg" id="fx-top"></span></div>
+    <div class="bar"><span><b>New mode on throws</b></span><span class="seg" id="fx-cycle"></span></div>
+    <div class="bar"><span><b>Throws per change</b></span><span class="seg" id="fx-every"></span></div>
+    <div class="bar"><span><b>Modes to step through</b> <span class="muted" id="fx-count"></span></span></div>
+    <div class="grid" id="g-fx"></div>
+    <p class="muted">For lights with a motion sensor, firmware 14 or later; flash colours and the top flash need 17. The top flash is timed from each light’s last throw, so it lands on balls and flat throws but not spun clubs, and it starts on a light’s second throw. The flash is each light’s own. Every throw by any light counts, and the mode changes on all the lights paired over the radio and connected here. Lights keep these settings when you disconnect.</p>
+  </section>
+</div>
+
+<div id="nowplaying" hidden>
+  <span class="icon sm" id="np-icon"></span>
+  <div class="meta"><div id="np-text"></div><progress id="np-prog" max="1" value="0"></progress></div>
+  <button class="play on" id="np-stop" aria-label="Stop playlist"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+</div>
+
+<dialog id="editor"><div class="sheet">
+  <div class="grab"></div>
+  <input class="field" id="ed-name" placeholder="Playlist name" autocomplete="off">
+  <div class="steps" id="ed-steps"></div>
+  <button class="secondary" id="ed-add">Add a step</button>
+  <div class="row">
+    <button class="link danger" id="ed-del">Delete</button>
+    <span class="grow"></span>
+    <button class="secondary" id="ed-cancel">Cancel</button>
+    <button class="primary" id="ed-save">Save</button>
+  </div>
+</div></dialog>
+
+<dialog id="picker"><div class="sheet">
+  <div class="grab"></div>
+  <h2>Choose a step</h2>
+  <div id="pk-body"></div>
+  <button class="secondary" id="pk-cancel">Cancel</button>
+</div></dialog>
+
+<dialog id="lightsheet"><div class="sheet">
+  <div class="grab"></div>
+  <h2>Lights</h2>
+  <div class="steps" id="lightrows"></div>
+  <p class="muted">Put lights in groups to control each group on its own. On firmware 22 or later the lights in a group also pair with each other over the radio, so next time connecting one of them is enough. Older lights pair by holding their buttons 5 s (10 s unpairs), and paired lights follow each other whatever their group.</p>
+  <p class="muted">Lights you aren’t connected to are listed too when a connected light hears them over the radio (firmware 12 or later on both).</p>
+  <div class="row"><button class="secondary grow" id="lights-add">Connect another</button><button class="primary" id="lights-close">Done</button></div>
+</div></dialog>
+
+<dialog id="settings"><div class="sheet">
+  <div class="grab"></div>
+  <h2>Settings</h2>
+  <h3>Anthropic API key</h3>
+  <p class="muted">Used to design the lights you describe. It stays in this browser on this phone.</p>
+  <div class="row" id="keyrow"><input class="field grow" id="akey" type="password" autocomplete="off" placeholder="sk-ant-…"><button class="secondary" id="savekey">Save</button></div>
+  <div class="row" id="keyset"><span class="grow">Key saved</span><button class="link danger" id="forgetkey">Remove key</button></div>
+  <h3>Sleep</h3>
+  <p class="muted">A light left switched off goes to sleep after this long: radio off, only its button wakes it. Sets every connected light on firmware 17 or later, and each keeps it. Older firmware sleeps after 5 minutes.</p>
+  <div class="row"><span class="grow">Sleep after</span><input class="field" id="sleepmin" type="number" min="1" max="65535" step="1" inputmode="numeric" style="width:96px"><span>minutes</span></div>
+  <h3>Firmware</h3>
+  <p class="muted">Each board is offered the latest build for its own type.</p>
+  <div class="steps" id="fwboards"></div>
+  <p class="muted">Find makes a board flash green. While a board updates it flashes green until you hold its button for 5 seconds; then it blinks purple.</p>
+  <details><summary class="muted">Use a file instead</summary>
+    <input class="field" id="fw" type="file" accept=".bin" style="padding-top:11px;margin-top:8px"></details>
+  <p id="ustatus" class="muted"></p>
+  <progress id="uprog" max="1" value="0" hidden></progress>
+  <button class="secondary" id="set-close">Done</button>
+</div></dialog>
+
+<script src="lumi.js"></script>
+<script>
+/*MODES*/const MODES = {"fast":[["fade","Love Yourself",["#ffffff","#808080"],2500],["fade","Be Colourful",["#ffffff","#808080"],2500],["fade","Find Fire",["#ffffff","#808080"],2500],["fade","Awaken Fast",["#ffffff","#808080"],2500],["fade","Ice Fade",["#ffffff","#808080"],2500],["dot","Joyful",["#ffffff","#808080"],2500],["dot","Spread Love",["#ffffff","#808080"],2500],["dot","Soul World",["#ffffff","#808080"],2500],["dot","Stay Cool",["#ffffff","#808080"],2500],["dot","Trippin Balls",["#ffffff","#808080"],2500],["dot","CMY",["#ffffff","#808080"],2500],["dot","Pastel",["#ffffff","#808080"],2500],["dot","Strobe",["#ffffff","#808080"],2500],["alter","Pink Cyan",["#ffffff","#808080"],2500],["alter","Red White",["#ffffff","#808080"],2500],["alter","Purple Orange",["#ffffff","#808080"],2500],["alter","Blue Green",["#ffffff","#808080"],2500],["solid","Pink",["#ffffff"],2500],["solid","Red",["#ffffff"],2500],["solid","Orange",["#ffffff"],2500],["solid","Yellow",["#ffffff"],2500],["solid","Green",["#ffffff"],2500],["solid","Cyan",["#ffffff"],2500],["solid","Blue",["#ffffff"],2500],["solid","Purple",["#ffffff"],2500],["solid","White",["#ffffff"],2500]],"slow":[["fade","Love Yourself",["#ffffff","#808080"],2500],["fade","Be Colourful",["#ffffff","#808080"],2500],["fade","Find Fire",["#ffffff","#808080"],2500],["fade","Awaken Fast",["#ffffff","#808080"],2500],["fade","Ice Fade",["#ffffff","#808080"],2500],["dotslow","Joyful",["#ffffff","#808080"],2500],["dotslow","Spread Love",["#ffffff","#808080"],2500],["dotslow","Soul World",["#ffffff","#808080"],2500],["dotslow","Stay Cool",["#ffffff","#808080"],2500],["dotslow","Trippin Balls",["#ffffff","#808080"],2500],["dotslow","CMY",["#ffffff","#808080"],2500],["dotslow","Pastel",["#ffffff","#808080"],2500],["dot","Strobe",["#ffffff","#808080"],2500],["alter","Pink Cyan",["#ffffff","#808080"],2500],["alter","Red White",["#ffffff","#808080"],2500],["alter","Purple Orange",["#ffffff","#808080"],2500],["alter","Blue Green",["#ffffff","#808080"],2500],["solid","Pink",["#ffffff"],2500],["solid","Red",["#ffffff"],2500],["solid","Orange",["#ffffff"],2500],["solid","Yellow",["#ffffff"],2500],["solid","Green",["#ffffff"],2500],["solid","Cyan",["#ffffff"],2500],["solid","Blue",["#ffffff"],2500],["solid","Purple",["#ffffff"],2500],["solid","White",["#ffffff"],2500]]};/*END*/
+const { SERVICE, CHAR, OTA_SERVICE, OTA_CHAR, SLOTS, AUTO, NO_CUSTOM, STYLES, hex2 } = Lumi;   // lumi.js: the light's Bluetooth blocks
+const $ = id => document.getElementById(id);
+const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+
+// ---- light state, mirrored from the board (firmware/ble.c characteristic layout) ----
+// bytes: on, mode, brightness, program (read only), hue, custom[14] (n|style<<4, step 10 ms, 4 x RGB), speed
+// st / custom / prog are what the controls show: the selected group's state
+let st = { on: 0, mode: 0, bright: 128, hue: 0, speed: 128 }, custom = NO_CUSTOM, prog = 'fast';
+const boards = new Map();   // device -> { ch, srv, busy, len, st, custom, prog, sentAt }: each board's last known state
+
+// groups: set on this phone in the Lights sheet. The controls drive the selected group, or every light (sel null)
+const groupNames = store.get('lumi.groups', {});   // device id -> group name; missing = no group
+const groupOf = d => groupNames[d.id] || '';
+const lightNames = store.get('lumi.names', {});    // light id -> the name given on this phone (older pages: device id)
+const idOf = d => /^Lumi ([0-9A-F]{4})$/.exec(d.name || '')?.[1] || d.id;   // the 4 hex digits of its name, which radio-heard lights have too
+const nameOf = d => lightNames[idOf(d)] || lightNames[d.id] || d.name || 'Lumi';
+let sel = null;
+const inSel = d => sel == null || groupOf(d) === sel;
+
+const readBoard = Lumi.parseState;
+const sameState = (b, got) => ['on', 'mode', 'bright', 'hue', 'speed'].every(k => got.st[k] === b.st[k]) && String(got.custom) === String(b.custom);
+
+const CURRENT_LEN = 20;   // state size of the current firmware; older boards are sent what they understand
+function write(b, s, c, p = prog) {   // one GATT operation at a time per board
+  b.st = { ...s }; b.custom = c; b.prog = p; b.sentAt = Date.now();
+  const bytes = Lumi.stateBytes(s, c, p, b.len);   // older firmware drops other lengths silently
+  b.busy = b.busy.then(() => b.ch.writeValueWithoutResponse(bytes)).catch(e => b.srv.connected ? say(e.message, true) : prune());
+}
+function send(changes, c) {
+  st = { ...st, ...changes };
+  if (c) custom = c;
+  for (const [d, b] of boards) if (inSel(d)) write(b, st, custom);
+  render();
+}
+function show(b) {   // the controls take on this board's state
+  st = { ...b.st }; custom = b.custom;
+  if (b.prog !== prog) { prog = b.prog; buildModes(); }
+}
+function joinGroup(dev, moved) {   // a board takes on the state of the rest of its group; moved: the user just put it there
+  pairRadio(dev, moved);   // first: a light that just joined waits to hear its group, and the state write after it ends the wait
+  const peer = [...boards].find(([d]) => d !== dev && groupOf(d) === groupOf(dev))?.[1];
+  if (peer) write(boards.get(dev), peer.st, peer.custom, peer.prog);
+  writeFx(boards.get(dev), fxOf(groupOf(dev)));
+}
+// Firmware 22: each named group's lights also pair over the radio, on a pairing group kept per group on this phone, so
+// they follow each other with one connected. A group new to it keeps its first light's pairing (that light's partners
+// may not be connected) unless another group has it. A light taken out of every group is unpaired
+const UNPAIRED = 0x80000000;   // bit 31 of a pairing group: never paired (FRESH_BIT in firmware/ble.c)
+const radioOf = store.get('lumi.radio', {});   // group name -> its pairing group
+function pairRadio(dev, moved) {
+  const b = boards.get(dev), g = groupOf(dev);
+  if (!(b.ver >= 22)) return;
+  if (!g) { if (moved && b.rf < UNPAIRED) setRadio(b, 0); return; }
+  if (!radioOf[g]) {
+    radioOf[g] = b.rf < UNPAIRED && !Object.values(radioOf).includes(b.rf) ? b.rf : crypto.getRandomValues(new Uint32Array(1))[0] >>> 1 || 1;
+    store.set('lumi.radio', radioOf);
+  }
+  if (b.rf !== radioOf[g]) setRadio(b, radioOf[g]);
+}
+function setRadio(b, id) {   // a 4-byte write to the state characteristic, uint32 LE, 0 = unpaired. With response: unconfirmed writes arrived altered on the update bench
+  b.rf = id || UNPAIRED;
+  b.busy = b.busy.then(() => b.ch.writeValueWithResponse(Lumi.radioBytes(id))).catch(e => say(e.message, true));
+}
+function pickGroup(g) {
+  sel = g;
+  show([...boards].find(([d]) => inSel(d))[1]);
+  render();
+}
+function setGroup(dev, g) {
+  if (g) groupNames[dev.id] = g; else delete groupNames[dev.id];
+  store.set('lumi.groups', groupNames);
+  joinGroup(dev, true);
+  render();
+}
+function renderGroups() {
+  const names = [...new Set([...boards.keys()].map(groupOf))].sort();
+  if (sel != null && !names.includes(sel)) { sel = null; if (boards.size) show(boards.values().next().value); }   // its lights went away
+  $('groups').hidden = names.length < 2;
+  segmented('groups', [[null, 'All'], ...names.map(n => [n, n || 'No group'])], sel, pickGroup);
+}
+
+// ---- colour maths: same hue rotation and speed curve as app.c ----
+function tintFn(h) {
+  if (!h) return c => c;
+  const t = h * 2 * Math.PI / 256, co = Math.cos(t), a = (1 - co) / 3, k = Math.sin(t) / Math.sqrt(3);
+  const m = [co + a, a - k, a + k], px = (x, y, z) => Math.max(0, Math.min(255, Math.round(m[0] * x + m[1] * y + m[2] * z)));
+  return ([r, g, b]) => [px(r, g, b), px(g, b, r), px(b, r, g)];
+}
+const css = c => `rgb(${c.join(',')})`;
+const speedMul = s => { const base = 64 << (s >> 6); return (base + base * (s & 63) / 64) / 256; };
+const customCols = Lumi.customColours;
+
+function iconCss(kind, cols) {   // a still of the pattern
+  const c = cols.map(css), seg = 360 / c.length;
+  if (kind === 'solid' || c.length === 1) return c[0];
+  if (kind === 'alter' || kind === 'steps') return `conic-gradient(${c.map((x, i) => `${x} ${i * seg}deg ${(i + 1) * seg}deg`)})`;
+  if (kind === 'dot' || kind === 'blink') return `conic-gradient(${c.map((x, i) => `${x} ${i * seg}deg ${(i + .6) * seg}deg, #000 ${(i + .6) * seg}deg ${(i + 1) * seg}deg`)})`;
+  return `conic-gradient(${[...c, c[0]]})`;   // fades, smooth dots
+}
+function modeIcon(slot, p = prog, hue = st.hue) {
+  const tint = tintFn(hue);
+  if (slot === AUTO) return iconCss('fade', MODES[p].filter(m => m[0] === 'solid').map(m => tint(hex2(m[2][0]))));
+  const [kind, , cols] = MODES[p][slot];
+  return iconCss(kind, cols.map(h => tint(hex2(h))));
+}
+const madeIcon = block => iconCss(STYLES[block[0] >> 4] || 'steps', customCols(block));
+// Mine holds lights Claude designed ({ id, name, block }) and saved presets, which add the set and sliders ({ ..., prog, s })
+const lookIcon = m => m.s && !(m.block[0] & 15) ? modeIcon(m.s.mode, m.prog, m.s.hue) : madeIcon(m.block);
+const isLook = m => !!st.on && String(custom) === String(m.block) && (!m.s || ['hue', 'speed', 'bright'].every(k => m.s[k] === st[k])
+  && (!!(m.block[0] & 15) || (m.s.mode === st.mode && m.prog === prog)));
+const modeName = slot => slot === AUTO ? 'Auto-cycle' : MODES[prog][slot][1];
+
+// ---- the orb: plays the current pattern on screen, the way app.c drives the LED ----
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const t0 = performance.now();
+let lastGlow = 0;
+function frameColour(now) {
+  let phase = reduceMotion ? 0 : Math.max(0, now - t0) * 10 * speedMul(st.speed);   // 100 us units; a frame can be stamped before t0
+  const n = custom[0] & 15;
+  if (n) {
+    const cols = customCols(custom), step = custom[1] * 100, i = Math.floor(phase / step) % n, f = (phase % step) / step, style = custom[0] >> 4;
+    if (style === 1) return cols[i].map((a, k) => Math.round(a + (cols[(i + 1) % n][k] - a) * f));
+    if (style === 3) return cols[0];   // juggle: the ball in a hand
+    return style === 2 && f >= .5 ? [0, 0, 0] : cols[i];
+  }
+  let slot = st.mode;
+  if (slot === AUTO) { slot = Math.floor(phase / 50000) % AUTO; phase %= 50000; }
+  const [kind, , cols, freq] = MODES[prog][slot] || MODES.fast[0];
+  const tint = tintFn(st.hue), ac = freq ? Math.floor(phase / freq) : 0;
+  if (kind === 'dot') return ac % 5 ? [0, 0, 0] : tint(hex2(cols[Math.floor(ac / 5) % cols.length]));
+  return tint(hex2(cols[ac % cols.length]));
+}
+function tick(now) {
+  const on = boards.size && st.on, c = frameColour(now), lit = c.some(v => v > 8);
+  $('orb').classList.toggle('off', !on);
+  if (on) $('orb').style.setProperty('--c', lit ? css(c) : '#0000');
+  if (on && lit && now - lastGlow > 150) {   // tint the controls with the light, a few times a second
+    lastGlow = now;
+    const m = Math.max(...c, 1);
+    document.documentElement.style.setProperty('--glow', css(c.map(v => Math.round(80 + v / m * 175))));
+  }
+  if (!reduceMotion) requestAnimationFrame(tick);
+}
+
+// ---- rendering ----
+let tab = store.get('lumi.tab', 'modes'), editingMine = false;
+const made = store.get('lumi.made', []);                 // [{ id, name, block }]
+const lists = store.get('lumi.playlists', {});           // name -> [[step, seconds]]; step: mode slot, or "m:<id>" for one of Mine
+function say(t, err) { $('askstatus').textContent = t || ''; $('askstatus').classList.toggle('err', !!err); }
+
+function buildModes() {
+  for (const g of ['g-patterns', 'g-alter', 'g-solid']) $(g).replaceChildren();
+  for (let i = 0; i < SLOTS; i++) {
+    const kind = i === AUTO ? 'fade' : MODES[prog][i][0];
+    const t = el('button', 'tile', `<span class="icon"></span><b></b>`);
+    t.querySelector('b').textContent = i === AUTO ? 'Auto' : modeName(i);
+    t.onclick = () => { stopPlaylist(); send({ on: 1, mode: i }, NO_CUSTOM); };
+    t.dataset.slot = i;
+    $(kind === 'solid' ? 'g-solid' : kind === 'alter' ? 'g-alter' : 'g-patterns').append(t);
+  }
+}
+function renderModes() {
+  segmented('set', [['fast', 'Spin'], ['slow', 'Juggle']], prog, p => { if (p !== prog) { prog = p; buildModes(); send({ on: 1 }); } });
+  for (const t of document.querySelectorAll('#tab-modes .tile')) {
+    const slot = +t.dataset.slot;
+    t.firstChild.style.background = modeIcon(slot);
+    t.classList.toggle('sel', !!st.on && !(custom[0] & 15) && slot === st.mode);
+  }
+}
+function renderMine() {
+  $('g-mine').replaceChildren(...made.map(m => {
+    const t = el('button', 'tile', `<span class="icon"></span><b></b>`);
+    t.firstChild.style.background = lookIcon(m);
+    t.querySelector('b').textContent = m.name;
+    t.classList.toggle('sel', isLook(m));
+    t.onclick = () => { if (editingMine) return; stopPlaylist(); playMade(m); };
+    if (editingMine) {
+      const x = el('span', 'x', '✕');
+      x.setAttribute('role', 'button'); x.setAttribute('aria-label', `Delete ${m.name}`);
+      x.onclick = e => { e.stopPropagation(); made.splice(made.indexOf(m), 1); store.set('lumi.made', made); render(); };
+      t.append(x);
+    }
+    return t;
+  }));
+  $('mine-empty').hidden = made.length > 0;
+  $('editmine').hidden = !made.length;
+  if (!made.length) editingMine = false;
+  $('editmine').textContent = editingMine ? 'Done' : 'Edit';
+  $('minecount').textContent = made.length ? `${made.length} saved` : '';
+}
+function stepInfo(step) {   // -> { name, icon } for a playlist step
+  if (typeof step === 'string') {
+    const m = made.find(x => 'm:' + x.id === step);
+    return m ? { name: m.name, icon: lookIcon(m) } : { name: 'Deleted light', icon: 'var(--raised)' };
+  }
+  return { name: modeName(step), icon: modeIcon(step) };
+}
+const fmtTime = s => s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ''}`;
+const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>';
+const STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+function renderLists() {
+  const names = Object.keys(lists).sort();
+  $('plist').replaceChildren(...names.map(n => {
+    const steps = lists[n], row = el('div', 'pl'), on = playing?.name === n;
+    const meta = el('button', 'meta', `<div class="name"></div><div class="info"></div><div class="strip"></div>`);
+    meta.querySelector('.name').textContent = n;
+    meta.querySelector('.info').textContent = on ? `Playing step ${playing.at + 1} of ${steps.length}`
+      : `${steps.length} step${steps.length === 1 ? '' : 's'}, ${fmtTime(steps.reduce((a, s) => a + s[1], 0))} a loop`;
+    meta.querySelector('.strip').append(...steps.slice(0, 16).map(s => { const i = el('span', 'icon xs'); i.style.background = stepInfo(s[0]).icon; return i; }));
+    meta.setAttribute('aria-label', `Edit ${n}`);
+    meta.onclick = () => openEditor(n);
+    const p = el('button', 'play' + (on ? ' on' : ''), on ? STOP : PLAY);
+    p.setAttribute('aria-label', on ? `Stop ${n}` : `Play ${n}`);
+    p.onclick = () => on ? stopPlaylist() : startPlaylist(n);
+    row.append(meta, p);
+    return row;
+  }));
+  $('lists-empty').hidden = names.length > 0;
+}
+// iPhones and iPads have no Web Bluetooth in Safari or Chrome (both are WebKit there); Bluefy, a free browser app, adds it.
+// Said where it's seen: until a light connects, the controls (and the status line under them) are hidden
+const NO_BT = navigator.bluetooth ? '' : /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1
+  ? 'iPhone browsers can’t use Bluetooth. Open this page in the Bluefy app (free on the App Store).'
+  : 'This browser can’t use Bluetooth. Open the page in Chrome on Android or a computer.';
+function renderTop() {
+  const rf = heardNow(), all = [...boards.values(), ...rf];
+  const attention = all.some(b => needsUpdate(b) || (battOf(b)?.[2] <= 1 && !b.usb));
+  $('lights').hidden = !boards.size;
+  $('lights').classList.toggle('old', attention);
+  $('lightsn').textContent = `${all.length} light${all.length === 1 ? '' : 's'}`;
+  $('lights').setAttribute('aria-label', `${boards.size} connected${rf.length ? `, ${rf.length} more heard over the radio` : ''}${attention ? ', one needs attention' : ''}. Show lights`);
+  if ($('lightsheet').open) drawLights();
+  $('ctl').hidden = !boards.size;
+  $('orb').setAttribute('aria-label', !boards.size ? 'Connect' : st.on ? 'Turn off' : 'Turn on');
+  if (!boards.size) { $('now').textContent = 'Not connected'; $('sub').textContent = NO_BT || 'Tap the light to connect your boards'; return; }
+  const n = custom[0] & 15, m = made.find(isLook), here = [...boards.keys()].filter(inSel).length;
+  $('now').textContent = !st.on ? 'Off' : m ? m.name : n ? 'Your own light' : modeName(st.mode);
+  $('sub').textContent = !st.on ? 'Tap the light to turn it on' : playing ? `Playing ${playing.name}`
+    : here > 1 ? `${here} boards in step` : 'Tap the light to turn it off';
+}
+function renderSliders() {
+  $('bright').value = st.bright; $('hue').value = st.hue; $('speed').value = st.speed;
+  $('brightv').textContent = Math.round(st.bright / 255 * 100) + '%';
+  $('huev').textContent = st.hue ? `Shifted ${Math.round(st.hue * 360 / 256)}°` : 'Original';
+  $('huev').classList.toggle('changed', !!st.hue);
+  const mul = speedMul(st.speed);
+  $('speedv').textContent = st.speed === 128 ? 'Normal' : `${mul < 1 ? mul.toFixed(2) : mul.toFixed(1)}×`;
+  $('speedv').classList.toggle('changed', st.speed !== 128);
+}
+function render() {
+  renderGroups(); renderTop(); renderSliders(); renderModes(); renderMine(); renderLists(); renderFx();
+  if (reduceMotion) tick(performance.now());   // no animation loop: redraw the orb on changes
+  for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', b.dataset.tab === tab);
+  for (const t of ['modes', 'mine', 'lists', 'music', 'throws']) $('tab-' + t).hidden = t !== tab;
+}
+for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => { tab = b.dataset.tab; store.set('lumi.tab', tab); render(); if (tab === 'music') renderMusic(); };
+$('editmine').onclick = () => { editingMine = !editingMine; renderMine(); };
+
+// ---- controls ----
+$('orb').onclick = () => boards.size ? (stopPlaylist(), send({ on: st.on ? 0 : 1 })) : connect();
+$('add').onclick = pickBoard;
+for (const [id, key, reset] of [['bright', 'bright'], ['hue', 'hue', 0], ['speed', 'speed', 128]]) {
+  $(id).oninput = e => { st[key] = +e.target.value; renderSliders(); if (key === 'hue') renderModes(); };   // preview while dragging
+  $(id).onchange = e => send({ [key]: +e.target.value });
+  if (reset != null) $(id + 'v').onclick = e => { e.preventDefault(); send({ [key]: reset }); };
+}
+
+// ---- connecting; a board's own button presses get passed on to the others ----
+const ECHO_MS = 600;
+function onNotify(dev, dv) {
+  const b = boards.get(dev), got = readBoard(dv);
+  if (!b) return;   // still attaching
+  b.prog = got.prog;
+  if (inSel(dev) && got.prog !== prog) { prog = got.prog; buildModes(); render(); }   // set changed on the board (or older firmware refused the switch)
+  if (Date.now() - b.sentAt < ECHO_MS || sameState(b, got)) return;
+  b.st = got.st; b.custom = got.custom;
+  for (const [d, o] of boards) if (d !== dev && groupOf(d) === groupOf(dev)) write(o, got.st, got.custom, got.prog);   // only its own group follows
+  if (inSel(dev)) show(b);
+  render();
+}
+function moveName(d) {   // names were kept by device id, which radio-heard lights don't have
+  if (lightNames[d.id] && idOf(d) !== d.id) { lightNames[idOf(d)] ??= lightNames[d.id]; delete lightNames[d.id]; store.set('lumi.names', lightNames); }
+}
+async function attach(dev) {   // connect one board and join it to the others
+  if (boards.has(dev)) return;
+  moveName(dev);
+  dev.ongattserverdisconnected = () => { boards.delete(dev); render(); };
+  const srv = await dev.gatt.connect();
+  const ch = await (await srv.getPrimaryService(SERVICE)).getCharacteristic(CHAR);
+  ch.addEventListener('characteristicvaluechanged', e => onNotify(dev, e.target.value));
+  await ch.startNotifications();
+  const first = await ch.readValue(), b = { ch, srv, busy: Promise.resolve(), len: first.byteLength, sentAt: 0, ...readBoard(first) };
+  if (!dev.gatt.connected) throw new Error('lost the link while connecting');   // or reach() gave up on it meanwhile
+  if (!boards.size) show(b);
+  boards.set(dev, b);
+  await boardInfo(b);
+  checkLatest();   // this board's type may be new: fetch its latest build
+  joinGroup(dev);   // a new board joins its group's current state
+  render();
+}
+const within = (ms, p) => Promise.race([p, sleep(ms).then(() => { throw new Error('timed out'); })]);
+async function reach(dev) {   // a remembered board: connect directly, or wait to hear it advertise first
+  try { return await within(6000, attach(dev)); } catch (e) {
+    if (boards.has(dev)) return;   // connected, only the version check was slow
+    dev.gatt.disconnect();         // cancel the attempt still pending, so it can't overlap the next one
+  }
+  if (!dev.watchAdvertisements) throw new Error('not in range');
+  const heard = new Promise(r => dev.addEventListener('advertisementreceived', r, { once: true }));
+  await dev.watchAdvertisements();
+  try { await within(8000, heard); } finally { dev.unwatchAdvertisements?.(); }
+  return within(8000, attach(dev));
+}
+// Chrome's picker returns one board at a time, but boards you've allowed before can all reconnect without it.
+// One at a time: Android's Bluetooth stack fails or stalls connections started together, worse past 3 or 4 boards.
+async function reconnectKnown() {
+  if (!navigator.bluetooth?.getDevices) return 0;
+  const known = (await navigator.bluetooth.getDevices()).filter(d => !boards.has(d));
+  let ok = 0;
+  for (const [i, d] of known.entries()) {
+    $('sub').textContent = `Connecting to ${nameOf(d)}, ${i + 1} of ${known.length}…`;
+    try { await reach(d); ok++; } catch (e) {}
+  }
+  render();
+  return ok;
+}
+// A light can stay listed after its link is gone (2026-10-30: four balls woken from sleep, every tap failing with
+// "GATT Server is disconnected"). Drop those and reconnect them, one pass at a time
+let pruning = null;
+function prune() {
+  if (updating) return;   // an update reconnects its board itself
+  return pruning ??= (async () => {
+    const gone = [...boards.keys()].filter(d => !d.gatt.connected);
+    for (const d of gone) boards.delete(d);
+    if (gone.length) { render(); await reconnectKnown(); }
+  })().catch(() => {}).finally(() => { pruning = null; });
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) prune(); });
+async function pickBoard(name) {   // name: just that light in the picker (a radio-heard one)
+  if (NO_BT) return render();
+  try {
+    const filter = typeof name === 'string' ? { services: [SERVICE], name } : { services: [SERVICE] };
+    const dev = await navigator.bluetooth.requestDevice({ filters: [filter], optionalServices: [OTA_SERVICE] });
+    $('sub').textContent = `Connecting to ${nameOf(dev)}…`;
+    await attach(dev);
+  } catch (e) {
+    if (e.name !== 'NotFoundError') say(`Couldn’t connect: ${e.message}`, true);   // NotFoundError: the picker was closed
+    render();
+  }
+}
+async function connect() {   // the orb: every board you've used before, or the picker the first time
+  const known = navigator.bluetooth?.getDevices ? (await navigator.bluetooth.getDevices()).filter(d => !boards.has(d)) : [];
+  if (!known.length) return pickBoard();
+  if (!await reconnectKnown()) { say('No remembered boards answered. Check they’re on, or tap + to pick one.', true); render(); }
+}
+
+// ---- describe a light: Claude designs it, it plays, and it's saved under Mine ----
+const COLOUR_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', description: 'Two or three words naming the look' },
+    style: { type: 'string', enum: STYLES },
+    step_seconds: { type: 'number', description: 'Time per colour, 0.05 to 2.5' },
+    colors: { type: 'array', description: '1 to 4 colours, in play order',
+              items: { type: 'object', properties: { r: { type: 'integer' }, g: { type: 'integer' }, b: { type: 'integer' } }, required: ['r', 'g', 'b'], additionalProperties: false } },
+  },
+  required: ['name', 'style', 'step_seconds', 'colors'], additionalProperties: false,
+};
+const COLOUR_SYSTEM = `You design light patterns for a small RGB LED from a short spoken or typed request (speech-to-text, so expect slips).
+Return 1-4 colours as 0-255 RGB at full strength. The LED mixes red, green and blue light: saturated colours look best; whites and pastels come from mixing channels, and dark colours just look dim.
+Styles: "steps" jumps between the colours, "fade" blends smoothly from one to the next, "blink" flashes each colour with dark gaps.
+"juggle" is for juggling balls or clubs with a motion sensor, when the request is about throws, flight or catching: 2 colours, the first in a hand and the second in the air, from the throw to the catch (there is no colour for the top). step_seconds does nothing there.
+One colour with "steps" is a steady light. Pick step_seconds to match the mood: calm requests 1-2.5 s, lively ones 0.1-0.4 s.`;
+const AKEY = 'lumi.anthropicKey';   // stored as plain text (older versions of this page did too)
+const getKey = () => { try { return localStorage.getItem(AKEY) || ''; } catch (e) { return ''; } };
+const setKey = k => { try { k ? localStorage.setItem(AKEY, k) : localStorage.removeItem(AKEY); } catch (e) {} };
+let sdk;
+
+function playMade(m) {
+  if (!m.s) return send({ on: 1, hue: 0 }, m.block);
+  if (m.prog !== prog) { prog = m.prog; buildModes(); }
+  send({ on: 1, ...m.s }, m.block);
+}
+$('savelook').onclick = () => {
+  const name = prompt('Name this preset', $('now').textContent)?.trim();
+  if (!name) return;
+  made.unshift({ id: Date.now().toString(36), name: name.slice(0, 40), block: [...custom], prog, s: { mode: st.mode, bright: st.bright, hue: st.hue, speed: st.speed } });
+  store.set('lumi.made', made); render();
+  say(`Saved “${name.slice(0, 40)}” to Mine.`);
+};
+async function makeLight(text) {
+  if (!getKey()) { say('Add your Anthropic API key in settings first.', true); openSettings(); return; }
+  if (!boards.size) return say('Connect a board first.', true);
+  say(`Designing “${text}”…`);
+  try {
+    sdk ??= (await import('https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm')).default;
+    const client = new sdk({ apiKey: getKey(), dangerouslyAllowBrowser: true });   // the user's own key, on their own phone
+    const msg = await client.beta.messages.create({
+      model: 'claude-opus-5-5',
+      max_tokens: 16000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: COLOUR_SCHEMA } },
+      system: COLOUR_SYSTEM,
+      messages: [{ role: 'user', content: text }],
+    });
+    if (msg.stop_reason === 'refusal') throw new Error('Claude declined that one. Try describing it differently.');
+    const out = JSON.parse(msg.content.find(b => b.type === 'text').text);
+    const cols = out.colors.slice(0, 4).map(c => [c.r, c.g, c.b].map(x => Math.max(0, Math.min(255, Math.round(x)))));
+    if (!cols.length) throw new Error('No colours came back. Try again.');
+    const block = [cols.length | Math.max(0, STYLES.indexOf(out.style)) << 4, Math.max(1, Math.min(255, Math.round(out.step_seconds * 100)))];
+    for (let i = 0; i < 4; i++) block.push(...(cols[i] || [0, 0, 0]));
+    const m = { id: Date.now().toString(36), name: String(out.name).slice(0, 40), block };
+    made.unshift(m); store.set('lumi.made', made);
+    stopPlaylist(); playMade(m);
+    say(`Saved “${m.name}” to Mine.`);
+    $('ask').value = '';
+  } catch (e) {
+    say(sdk && e instanceof sdk.AuthenticationError ? 'Your API key was rejected. Check it in settings.' : `Couldn’t design it: ${e.message}`, true);
+  }
+}
+$('askform').onsubmit = e => { e.preventDefault(); const t = $('ask').value.trim(); if (t) makeLight(t); };
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) $('mic').hidden = true;
+$('mic').onclick = () => {
+  const rec = new SR();
+  rec.lang = navigator.language || 'en-AU';
+  rec.onresult = e => { const t = e.results[0][0].transcript; $('ask').value = t; makeLight(t); };
+  rec.onerror = e => say(e.error === 'not-allowed' ? 'Allow the microphone for this page to speak.' : `Didn’t catch that (${e.error}).`, true);
+  rec.onend = () => $('mic').classList.remove('listening');
+  $('mic').classList.add('listening');
+  say('Listening…');
+  rec.start();
+};
+
+// ---- playlists: saved on this phone, played from this page (keep it open) ----
+let playing = null, wake = null;   // { name, at, timer, until, dur }
+function playStep() {
+  const steps = lists[playing?.name];
+  if (!steps?.length || !boards.size) return stopPlaylist();
+  const live = s => typeof s[0] === 'number' || made.some(x => 'm:' + x.id === s[0]);
+  if (!steps.some(live)) return stopPlaylist();
+  while (!live(steps[playing.at])) playing.at = (playing.at + 1) % steps.length;   // skip lights deleted from Mine
+  const [step, sec] = steps[playing.at], m = typeof step === 'string' && made.find(x => 'm:' + x.id === step);
+  if (m) playMade(m); else send({ on: 1, mode: step }, NO_CUSTOM);
+  playing.until = Date.now() + sec * 1000; playing.dur = sec * 1000;
+  const info = stepInfo(step);
+  $('np-icon').style.background = info.icon;
+  $('np-text').textContent = `${playing.name}: ${info.name}`;
+  playing.timer = setTimeout(() => { playing.at = (playing.at + 1) % steps.length; playStep(); }, sec * 1000);
+  render();
+}
+async function startPlaylist(name) {
+  stopPlaylist(); $('audio').pause();
+  playing = { name, at: 0 };
+  $('nowplaying').hidden = false;
+  try { wake = await navigator.wakeLock.request('screen'); } catch (e) {}   // timers stall when the screen sleeps
+  playStep();
+}
+function stopPlaylist() {
+  if (!playing) return;
+  clearTimeout(playing.timer); playing = null;
+  if (wake) wake.release().catch(() => {}), wake = null;
+  $('nowplaying').hidden = true;
+  render();
+}
+$('np-stop').onclick = stopPlaylist;
+setInterval(() => { if (playing) $('np-prog').value = 1 - Math.max(0, playing.until - Date.now()) / playing.dur; }, 200);
+
+// ---- music: find the beat in a song on the phone, change lights on it ----
+// Beat tracking: a bass-weighted onset envelope (rises in short-time log energy), tempo from its
+// autocorrelation (weighted towards 120 BPM so half / double tempo lose), phase from the best-fitting
+// grid refined over the whole song, then each beat snapped to the nearest onset within 10% of a beat,
+// nudging the next prediction. Steady tempos land within ~10 ms; songs that speed up or slow down a lot drift.
+function analyseBeats(x, sr) {
+  const hop = 512, n = Math.floor(x.length / hop), fps = sr / hop, a = Math.exp(-2 * Math.PI * 150 / sr);
+  const eb = new Float32Array(n), ef = new Float32Array(n);
+  let lp = 0;
+  for (let i = 0; i < n; i++) {
+    let sb = 0, sf = 0;
+    for (let j = i * hop, end = j + hop; j < end; j++) { const v = x[j]; lp = lp * a + v * (1 - a); sb += lp * lp; sf += v * v; }
+    eb[i] = Math.log1p(100 * sb); ef[i] = Math.log1p(100 * sf);
+  }
+  const raw = new Float32Array(n);
+  for (let i = 1; i < n; i++) raw[i] = Math.max(0, eb[i] - eb[i - 1]) + 0.5 * Math.max(0, ef[i] - ef[i - 1]);
+  const env = new Float32Array(n), w = Math.round(fps / 4);   // minus a local mean, so steady loudness doesn't count
+  let acc = 0;
+  for (let i = 0; i < n; i++) { acc += raw[i] - (i >= 2 * w ? raw[i - 2 * w] : 0); const mean = acc / Math.min(i + 1, 2 * w); env[i] = Math.max(0, raw[i] - mean); }
+  const at = p => { const i = Math.floor(p), f = p - i; return i + 1 < n ? env[i] * (1 - f) + env[i + 1] * f : 0; };
+  let bestBpm = 120, bestScore = -1;
+  for (let bpm = 60; bpm <= 200; bpm += 0.25) {
+    const lag = 60 * fps / bpm;
+    let s = 0;
+    for (let i = 0; i + lag < n; i += 2) s += env[i] * at(i + lag);
+    s *= Math.exp(-0.5 * (Math.log2(bpm / 120) / 0.5) ** 2);
+    if (s > bestScore) { bestScore = s; bestBpm = bpm; }
+  }
+  // Refine: the autocorrelation peak is broad, and a 1% tempo error drifts a whole beat over a song.
+  // A grid that lines up with the hits for the entire song pins the exact tempo and phase.
+  const gridFit = lag => { let bs = -1, bo = 0; for (let o = 0; o < lag; o += 0.5) { let s = 0; for (let p = o; p < n; p += lag) s += at(p); if (s > bs) { bs = s; bo = o; } } return [bs, bo]; };
+  let lag = 60 * fps / bestBpm, [bestSum, bestO] = gridFit(lag);
+  for (let bpm = bestBpm * 0.97; bpm <= bestBpm * 1.03; bpm += 0.02) {
+    const L = 60 * fps / bpm, [sum, o] = gridFit(L);
+    if (sum > bestSum) { bestSum = sum; bestO = o; lag = L; bestBpm = bpm; }
+  }
+  // Walk the grid, snapping each beat to the strongest onset nearby and letting it nudge the next one.
+  const beats = [], win = Math.max(1, Math.round(lag * 0.1));
+  let thresh = 0; for (let i = 0; i < n; i++) thresh += env[i]; thresh = thresh / n * 2;
+  for (let p = bestO; p < n;) {
+    const k = Math.round(p);
+    let best = k;
+    for (let j = Math.max(0, k - win); j <= Math.min(n - 1, k + win); j++) if (env[j] > env[best]) best = j;
+    const hit = env[best] > thresh ? best : p;   // no clear hit (a break): keep the grid
+    beats.push(hit / fps);
+    p = 0.5 * (hit + lag) + 0.5 * (p + lag);
+  }
+  let total = 0; for (let i = 0; i < n; i++) total += env[i];
+  return { bpm: Math.round(bestBpm * 10) / 10, beats, env, fps, duration: x.length / sr, busy: total / n };
+}
+
+// Suggested lights from the tempo: fast songs flip patterns every beat, slow ones fade every few.
+function suggestFor(bpm) {
+  if (bpm >= 118) return { picks: [9, 10, 5, 13, 15, 16, 1, 6], every: 1 };
+  if (bpm >= 92) return { picks: [0, 1, 6, 7, 8, 13, 14], every: 2 };
+  return { picks: [0, 3, 4, 2, 17, 23, 24], every: 4 };
+}
+const music = { song: null, beats: null, next: 0, count: 0, last: null, ...store.get('lumi.music', { picks: [], every: 2, order: 'order', lead: 120 }) };
+const saveMusic = () => store.set('lumi.music', { picks: music.picks, every: music.every, order: music.order, lead: music.lead });
+
+function segmented(id, options, value, onPick) {
+  $(id).replaceChildren(...options.map(([v, label]) => {
+    const b = el('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value);
+    b.onclick = () => { onPick(v); renderMusic(); }; return b;
+  }));
+}
+// ---- throw effects (firmware 13, group-wide counting 14; sensor lights): kept per group on this phone, written to each of its lights ----
+const { SPARK: FX_SPARK, CYCLE: FX_CYCLE, TOP: FX_TOP } = Lumi.FX;
+const fxByGroup = store.get('lumi.fx', {});   // group name ('' = no group) -> { fx, modes: [slots], every, spark, top }
+const fxOf = g => ({ fx: 0, modes: [], every: 1, spark: '#ffffff', top: '#ffffff', ...fxByGroup[g] });
+function writeFx(b, f) {   // on the state characteristic: fx, the modes as a uint32 bit mask, throws per change; firmware 17: the two flash colours
+  if (!(b.ver >= 13)) return;
+  b.busy = b.busy.then(() => b.ch.writeValueWithoutResponse(Lumi.fxBytes(f, b.ver))).catch(e => say(e.message, true));
+}
+function setFx(change) {
+  for (const g of new Set([...boards.keys()].filter(inSel).map(groupOf))) fxByGroup[g] = { ...fxOf(g), ...change };
+  store.set('lumi.fx', fxByGroup);
+  for (const [d, b] of boards) if (inSel(d)) writeFx(b, fxOf(groupOf(d)));
+  renderFx();
+}
+function renderFx() {
+  const d = [...boards.keys()].find(inSel), f = fxOf(d ? groupOf(d) : '');
+  const flag = (id, bit) => segmented(id, [[0, 'Off'], [1, 'On']], f.fx & bit ? 1 : 0, v => setFx({ fx: v ? f.fx | bit : f.fx & ~bit }));
+  flag('fx-spark', FX_SPARK); flag('fx-top', FX_TOP); flag('fx-cycle', FX_CYCLE);
+  $('fx-spark-c').value = f.spark; $('fx-spark-c').onchange = e => setFx({ spark: e.target.value });   // change, not input: each write is a flash save
+  $('fx-top-c').value = f.top; $('fx-top-c').onchange = e => setFx({ top: e.target.value });
+  segmented('fx-every', [1, 2, 3, 4, 5, 6].map(n => [n, String(n)]), f.every, v => setFx({ every: v }));
+  $('g-fx').replaceChildren(...[...Array(AUTO).keys()].map(i => {   // auto-cycle left out: a throw is the cycle
+    const on = f.modes.includes(i), t = el('button', 'tile' + (on ? '' : ' off'), `<span class="icon"></span><b></b>`);
+    t.firstChild.style.background = modeIcon(i); t.querySelector('b').textContent = modeName(i);
+    t.setAttribute('aria-pressed', on);
+    t.onclick = () => setFx({ modes: on ? f.modes.filter(m => m !== i) : [...f.modes, i].sort((a, b) => a - b) });
+    return t;
+  }));
+  $('fx-count').textContent = f.modes.length ? `${f.modes.length} chosen` : 'none chosen';
+}
+function renderMusic() {
+  if (!music.beats) return;
+  segmented('every', [[1, '1'], [2, '2'], [4, '4'], [8, '8 beats']], music.every, v => { music.every = v; saveMusic(); });
+  segmented('order', [['order', 'In order'], ['shuffle', 'Shuffle']], music.order, v => { music.order = v; saveMusic(); });
+  $('lead').value = music.lead; $('leadv').textContent = `${music.lead} ms`;
+  const pool = [...made.map(m => ['m:' + m.id, lookIcon(m), m.name]), ...[...Array(SLOTS).keys()].map(i => [i, modeIcon(i), i === AUTO ? 'Auto' : modeName(i)])];
+  $('g-picks').replaceChildren(...pool.map(([id, icon, name]) => {
+    const k = music.picks.indexOf(id), t = el('button', 'tile' + (k < 0 ? ' off' : ''), `<span class="icon"></span><b></b>`);
+    t.firstChild.style.background = icon; t.querySelector('b').textContent = name;
+    t.setAttribute('aria-pressed', k >= 0);
+    if (k >= 0) t.append(Object.assign(el('span', 'n'), { textContent: k + 1 }));
+    t.onclick = () => { k < 0 ? music.picks.push(id) : music.picks.splice(k, 1); saveMusic(); renderMusic(); };
+    return t;
+  }));
+  $('pickcount').textContent = music.picks.length ? `${music.picks.length} chosen` : 'none chosen';
+  drawStrip();
+}
+function drawStrip() {
+  const c = $('beatstrip'), r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  if (!music.beats || !r.width) return;
+  if (c.width !== Math.round(r.width * dpr)) { c.width = Math.round(r.width * dpr); c.height = Math.round(64 * dpr); }
+  const g = c.getContext('2d'), W = c.width, H = c.height, { env, fps, duration } = music.song, cs = getComputedStyle(document.documentElement);
+  g.clearRect(0, 0, W, H);
+  const per = env.length / W; let max = 0; for (let i = 0; i < env.length; i++) max = Math.max(max, env[i]);
+  g.fillStyle = cs.getPropertyValue('--line');
+  for (let x = 0; x < W; x++) { let m = 0; for (let i = Math.floor(x * per); i < (x + 1) * per; i++) m = Math.max(m, env[i]); const h = Math.max(1, m / max * H * .9); g.fillRect(x, (H - h) / 2, 1, h); }
+  g.fillStyle = cs.getPropertyValue('--muted');
+  music.beats.forEach((t, i) => { if (i % music.every === 0) g.fillRect(Math.round(t / duration * W), H - 6 * dpr, Math.max(1, dpr), 6 * dpr); });
+  g.fillStyle = cs.getPropertyValue('--glow');
+  g.fillRect(Math.round($('audio').currentTime / duration * W), 0, 2 * dpr, H);
+}
+
+async function loadSong(file) {
+  $('songname').textContent = file.name.replace(/\.[^.]+$/, '');
+  $('songmeta').textContent = 'Finding the beat…';
+  $('songbody').hidden = true;
+  try {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await actx.decodeAudioData(await file.arrayBuffer());
+    actx.close();
+    const x = buf.getChannelData(0);
+    if (buf.numberOfChannels > 1) { const r = buf.getChannelData(1); for (let i = 0; i < x.length; i++) x[i] = (x[i] + r[i]) / 2; }
+    music.song = analyseBeats(x, buf.sampleRate);
+    music.beats = music.song.beats;
+    const sug = suggestFor(music.song.bpm);
+    if (!music.picks.length) { music.picks = [...sug.picks]; music.every = sug.every; saveMusic(); }
+    music.suggested = sug;
+    $('songmeta').textContent = `${Math.round(music.song.bpm)} BPM, ${music.beats.length} beats. Tap to choose another song.`;
+    if (music.url) URL.revokeObjectURL(music.url);
+    $('audio').src = music.url = URL.createObjectURL(file);
+    $('songbody').hidden = false;
+    renderMusic();
+  } catch (e) { $('songmeta').textContent = `Couldn’t read that file (${e.message}). Try an MP3 or M4A.`; }
+}
+$('song').onchange = e => e.target.files[0] && loadSong(e.target.files[0]);
+$('suggest').onclick = () => { if (!music.suggested) return; music.picks = [...music.suggested.picks]; music.every = music.suggested.every; saveMusic(); renderMusic(); };
+$('lead').oninput = e => { music.lead = +e.target.value; $('leadv').textContent = `${music.lead} ms`; };
+$('lead').onchange = saveMusic;
+
+function seekBeat() {   // first beat at or after the playhead
+  const t = $('audio').currentTime + music.lead / 1000;
+  let lo = 0, hi = music.beats.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; music.beats[m] < t ? lo = m + 1 : hi = m; }
+  music.next = lo; music.count = Math.floor(lo / music.every);
+}
+function changeOnBeat() {
+  const live = music.picks.filter(p => typeof p === 'number' || made.some(m => 'm:' + m.id === p));
+  if (!live.length || !boards.size) return;
+  let pick = music.order === 'shuffle' ? live[Math.floor(Math.random() * live.length)] : live[music.count % live.length];
+  if (music.order === 'shuffle' && live.length > 1) while (pick === music.last) pick = live[Math.floor(Math.random() * live.length)];
+  music.last = pick; music.count++;
+  const m = typeof pick === 'string' && made.find(x => 'm:' + x.id === pick);
+  if (m) playMade(m); else send({ on: 1, mode: pick }, NO_CUSTOM);
+}
+let musicWake = null;
+function musicLoop() {
+  const au = $('audio');
+  if (au.paused || !music.beats) return;
+  const t = au.currentTime + music.lead / 1000;
+  while (music.next < music.beats.length && music.beats[music.next] <= t) {
+    if (music.next % music.every === 0) changeOnBeat();
+    music.next++;
+  }
+  drawStrip();
+  requestAnimationFrame(musicLoop);
+}
+$('audio').onplay = async () => {
+  stopPlaylist(); seekBeat();
+  try { musicWake = await navigator.wakeLock.request('screen'); } catch (e) {}   // the beat clock needs the screen on
+  requestAnimationFrame(musicLoop);
+};
+$('audio').onseeked = () => { if (music.beats) { seekBeat(); drawStrip(); } };
+$('audio').onpause = () => { if (musicWake) musicWake.release().catch(() => {}), musicWake = null; drawStrip(); };
+$('beatstrip').onclick = e => { if (!music.song) return; const r = e.currentTarget.getBoundingClientRect(); $('audio').currentTime = (e.clientX - r.left) / r.width * music.song.duration; };
+
+// editor sheet
+let edName = null, edSteps = [];
+const DURS = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600];
+function openEditor(name) {
+  edName = name; edSteps = name ? lists[name].map(s => [...s]) : [];
+  $('ed-name').value = name || '';
+  $('ed-name').placeholder = 'Playlist name';
+  $('ed-del').hidden = !name;
+  drawEditor();
+  $('editor').showModal();
+}
+function drawEditor() {
+  $('ed-steps').replaceChildren(...edSteps.map((s, i) => {
+    const info = stepInfo(s[0]), row = el('div', 'step' + (playing?.name === edName && playing?.at === i ? ' now' : ''));
+    const ic = el('span', 'icon sm'); ic.style.background = info.icon;
+    const nm = el('button', 'name'); nm.textContent = info.name; nm.setAttribute('aria-label', `Change step ${i + 1}, ${info.name}`);
+    nm.onclick = () => pick(v => { s[0] = v; drawEditor(); });
+    const dur = el('div', 'dur', `<button aria-label="Shorter">−</button><output></output><button aria-label="Longer">+</button>`);
+    const out = dur.querySelector('output'); out.textContent = fmtTime(s[1]);
+    const stepBy = d => { let k = DURS.findIndex(o => o >= s[1]); if (k < 0) k = DURS.length - 1; s[1] = DURS[Math.max(0, Math.min(DURS.length - 1, k + d))]; out.textContent = fmtTime(s[1]); };
+    dur.children[0].onclick = () => stepBy(-1); dur.children[2].onclick = () => stepBy(1);
+    const up = el('button', 'mini', '↑'); up.setAttribute('aria-label', 'Move up'); up.disabled = !i;
+    up.onclick = () => { [edSteps[i - 1], edSteps[i]] = [edSteps[i], edSteps[i - 1]]; drawEditor(); };
+    const x = el('button', 'mini danger', '✕'); x.setAttribute('aria-label', 'Remove step');
+    x.onclick = () => { edSteps.splice(i, 1); drawEditor(); };
+    row.append(ic, nm, dur, up, x);
+    return row;
+  }));
+  if (!edSteps.length) $('ed-steps').append(el('div', 'empty', 'Add steps, then set how long each one plays.'));
+  $('ed-save').disabled = !edSteps.length;
+}
+$('ed-add').onclick = () => pick(v => { edSteps.push([v, 10]); drawEditor(); });
+$('ed-cancel').onclick = () => $('editor').close();
+$('ed-save').onclick = () => {
+  const n = $('ed-name').value.trim();
+  if (!n) { $('ed-name').placeholder = 'Name the playlist first'; $('ed-name').focus(); return; }
+  if (!edSteps.length) return;
+  if (edName && edName !== n) delete lists[edName];
+  lists[n] = edSteps; store.set('lumi.playlists', lists);
+  if (playing?.name === edName) playing.name = n;
+  $('editor').close(); render();
+};
+$('ed-del').onclick = () => {
+  if (!confirm(`Delete “${edName}”?`)) return;
+  if (playing?.name === edName) stopPlaylist();
+  delete lists[edName]; store.set('lumi.playlists', lists);
+  $('editor').close(); render();
+};
+$('newlist').onclick = () => openEditor(null);
+
+// step picker sheet
+let picked = null;
+function pick(cb) {
+  picked = cb;
+  const body = $('pk-body'); body.replaceChildren();
+  const grid = items => { const g = el('div', 'grid'); g.append(...items); return g; };
+  const t = (bg, name, v) => { const b = el('button', 'tile', `<span class="icon"></span><b></b>`); b.firstChild.style.background = bg; b.querySelector('b').textContent = name; b.onclick = () => { $('picker').close(); picked(v); }; return b; };
+  if (made.length) body.append(el('div', 'group', 'Mine'), grid(made.map(m => t(lookIcon(m), m.name, 'm:' + m.id))));
+  body.append(el('div', 'group', 'Modes'), grid([...Array(SLOTS).keys()].map(i => t(modeIcon(i), i === AUTO ? 'Auto' : modeName(i), i))));
+  $('picker').showModal();
+}
+$('pk-cancel').onclick = () => $('picker').close();
+
+// ---- settings: API key, and firmware updates over Bluetooth (WCH BackupUpgrade protocol, see firmware/ble.c) ----
+function openSettings() {
+  $('keyset').hidden = !getKey(); $('keyrow').hidden = !!getKey();
+  drawFwBoards(); drawSleep();
+  if (!$('settings').open) { checkLatest(); $('settings').showModal(); }
+}
+$('gear').onclick = openSettings;
+// Sleep: minutes a light stays awake while off (firmware 17: a 2-byte write to the state characteristic, read back in INFO)
+function drawSleep() {
+  const b = [...boards.values()].find(b => b.ver >= 17);
+  $('sleepmin').value = b ? b.sleepMin : 5; $('sleepmin').disabled = !b;
+}
+$('sleepmin').onchange = () => {
+  const m = Math.min(65535, Math.max(1, Math.round($('sleepmin').value) || 5));
+  for (const b of boards.values()) if (b.ver >= 17) {
+    b.sleepMin = m;
+    b.busy = b.busy.then(() => b.ch.writeValueWithoutResponse(Lumi.sleepBytes(m))).catch(e => say(e.message, true));
+  }
+  drawSleep();
+};
+$('set-close').onclick = () => $('settings').close();
+$('savekey').onclick = () => { const k = $('akey').value.trim(); if (!k) return; setKey(k); $('akey').value = ''; openSettings(); say(''); };
+$('forgetkey').onclick = () => { setKey(''); openSettings(); };
+for (const d of document.querySelectorAll('dialog')) d.onclick = e => { if (e.target === d && !updating) d.close(); };   // tap outside closes
+for (const d of document.querySelectorAll('dialog')) {   // swipe a sheet down anywhere to close it
+  let y0 = null, t0 = 0, dy = 0, drag = null;
+  d.addEventListener('touchstart', e => { y0 = updating || e.touches.length > 1 ? null : e.touches[0].clientY; t0 = e.timeStamp; dy = 0; drag = null; }, { passive: true });
+  d.addEventListener('touchmove', e => {
+    if (y0 == null) return;
+    dy = e.touches[0].clientY - y0;
+    drag ??= e.cancelable && dy > 0 && d.scrollTop <= 0;   // the first move decides: down from the top drags, anything else scrolls as usual
+    if (!drag) return;
+    e.preventDefault();
+    d.style.transition = 'none';
+    d.style.transform = `translateY(${Math.max(0, dy)}px)`;
+  }, { passive: false });
+  const end = e => {
+    if (!drag) return;
+    drag = null;
+    const shut = e.type === 'touchend' && (dy > 80 || (dy > 20 && dy / (e.timeStamp - t0) > 0.5));   // far enough, or a flick
+    d.style.transition = 'transform .18s ease-out';
+    d.style.transform = shut ? 'translateY(100%)' : '';
+    if (shut) setTimeout(() => { d.close(); d.style.transform = d.style.transition = ''; }, 180);
+  };
+  d.addEventListener('touchend', end);
+  d.addEventListener('touchcancel', end);
+}
+
+const IMAGE_A = 0x1000, IMAGE_MAX = 108 * 1024, BLOCK = 4096, CHUNK = 16;
+// A ball on 15 stayed dark after its update's last step (a restart) until its power was cut (2026-10-30). The cause isn't
+// known: 21 and 21 without its radio-off change came back 14 of 14 on the bench. Until it is, boards before 21 get one
+// USB flash, then update here
+const BT_SAFE = 21;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const otaCmd = Lumi.cmd, answer = Lumi.answer;
+async function otaChar(b) {   // null when the firmware has no update service
+  if (b.ota === undefined) {
+    try { b.ota = await (await b.srv.getPrimaryService(OTA_SERVICE)).getCharacteristic(OTA_CHAR); } catch (e) { b.ota = null; }
+  }
+  return b.ota;
+}
+function otaAsk(b, ota, cmd) {   // a command and its answer in the board's queue, so no other command's read takes the answer
+  const p = b.busy.then(() => ota.writeValueWithResponse(cmd)).then(() => answer(ota));
+  b.busy = p.catch(() => {});
+  return p;
+}
+// Firmware version from the board's INFO reply (byte 10). 0 = a build from before versions, which can't
+// finish a Bluetooth update (it faulted on the last step), so it needs one USB flash.
+async function boardInfo(b) {
+  try {
+    const ota = await otaChar(b);
+    if (!ota) return b.ver = 0;
+    const v = await otaAsk(b, ota, otaCmd(0x84, 0, new Array(14).fill(0)));
+    Object.assign(b, Lumi.parseInfo(v));   // ver, type, mv (0 before 6), usb (1 charging, 2 full), sleepMin, rf (pairRadio)
+  } catch (e) { b.ver = 0; }
+  return b.ver;
+}
+const needsUpdate = b => b.len < CURRENT_LEN || b.ver === 0 || (b.ver != null && b.ver < (latest[typeOf(b)]?.version ?? 0));
+
+async function identify(dev, b) {   // flash this board green so you know which one it is
+  const ota = b.ver >= 2 && await otaChar(b);
+  if (ota) { await otaAsk(b, ota, otaCmd(0x85)); return true; }
+  // older firmware has no blink of its own: switch it off and on a few times (its group may follow)
+  const s = b.st, c = b.custom, p = b.prog;
+  for (let i = 0; i < 6; i++) { write(b, { ...s, on: i & 1 ? 1 : 0 }, c, p); await sleep(300); }
+  write(b, s, c, p);
+  return false;
+}
+
+let updating = false;
+addEventListener('beforeunload', e => { if (updating) e.preventDefault(); });   // leaving or reloading mid-update drops the link
+
+// ---- the Lights sheet: each connected light with its battery, then the lights they hear on the group radio ----
+// The R3 boards read their battery in 246 mV steps, so five honest levels rather than a percentage
+const BATT = [[3940, 'Full', 4], [3690, 'Good', 3], [3445, 'Low', 2], [3200, 'Very low', 1], [0, 'Empty', 0]];
+const battOf = b => b.mv && b.type > 2 ? BATT.find(([mv]) => b.mv >= mv) : null;   // nanoCH57x (types 1, 2) has no battery sense
+const NEW_GROUP = '\n';   // a name prompt() can't return
+
+// Boards on version 12 announce themselves on the group radio. Each connected one lists those it hears (0x86, 3 per
+// answer: how many, then id, type, version, battery / 20 mV, usb | 4 = paired with it) and passes Find on to them (0x87)
+let rfLights = new Map(), polling = false;   // light id -> { id, name, type, ver, mv, usb, paired, via: [devices that hear it] }
+async function pollHeard() {
+  if (updating || polling) return;
+  polling = true;
+  const next = new Map();
+  for (const [d, b] of boards) {
+    if (!(b.ver >= 12)) continue;
+    try {
+      const ota = await otaChar(b);
+      for (let got = 0, n = 1; got < n && !updating;) {
+        const { total, lights } = Lumi.parseHeard(await otaAsk(b, ota, otaCmd(0x86, got)));
+        n = total;
+        if (!lights.length) break;
+        for (const h of lights) {
+          got++;
+          const had = next.get(h.id);
+          if (!had) next.set(h.id, { ...h, name: `Lumi ${h.id}`, via: [d] });
+          else if (!had.via.includes(d)) { had.via.push(d); had.paired ||= h.paired; }
+        }
+      }
+    } catch (e) {}
+  }
+  polling = false;
+  const newType = [...next.values()].some(h => !(h.type in latest));
+  rfLights = next;
+  if (newType) checkLatest(); else render();
+}
+const heardNow = () => {   // radio-heard lights that aren't connected themselves, through a board that still is
+  const here = new Set([...boards.keys()].map(idOf));
+  return [...rfLights.values()].filter(h => !here.has(h.id) && h.via.some(d => boards.has(d)));
+};
+async function findHeard(h) {   // the board that hears it sends the blink over the group radio
+  const b = boards.get(h.via.find(d => boards.has(d)));
+  if (b && !updating) await otaAsk(b, await otaChar(b), otaCmd(0x87, parseInt(h.id, 16)));
+}
+setInterval(() => $('lightsheet').open && pollHeard(), 5000);   // boards drop a light 30 s after its last announce
+
+function lightRow(d, b) {   // its name (tap to rename) and battery. d: a connected device, or a radio-heard light (b = d)
+  const row = el('div', 'fwrow', `<div class="meta"><button class="name"></button><div class="info"></div></div>`), info = row.querySelector('.info'), bt = battOf(b);
+  const nm = row.querySelector('.name');
+  nm.textContent = nameOf(d);
+  if (lightNames[idOf(d)] || lightNames[d.id]) nm.append(Object.assign(el('span', 'muted'), { textContent: ` ${d.name || 'Lumi'}` }));   // its own name, to tell boards apart
+  nm.append(' ✎');
+  nm.setAttribute('aria-label', `Rename ${nameOf(d)}`);
+  nm.onclick = () => {
+    const n = prompt('Name this light', nameOf(d))?.trim().slice(0, 24);
+    if (n == null) return;
+    delete lightNames[d.id];
+    if (n && n !== d.name) lightNames[idOf(d)] = n; else delete lightNames[idOf(d)];   // empty: back to its own name
+    store.set('lumi.names', lightNames);
+    render();
+  };
+  const charge = b.usb && b.ver >= 8 ? (b.usb === 2 ? 'Charged' : 'Charging') : '';   // a charging cell reads high: no level then
+  if (bt && charge !== 'Charging') { const ic = el('span', 'batt', '<i></i>'); ic.firstChild.style.width = bt[2] * 4 + 'px'; info.append(ic); }
+  info.append(charge || (bt ? bt[1] + (b.usb ? ', on USB' : '') : b.usb ? 'On USB' : b.type === 1 || b.type === 2 ? 'No battery sense'
+    : b.ver == null ? 'Checking…' : 'Update its firmware to see the battery'));
+  info.classList.toggle('warn', !!bt && bt[2] <= 1 && !b.usb);
+  return row;
+}
+function drawLights() {
+  const names = [...new Set(Object.values(groupNames))].sort();
+  $('lightrows').replaceChildren(...[...boards].map(([d, b]) => {
+    const row = lightRow(d, b);
+    const grp = el('select', 'grp');
+    grp.setAttribute('aria-label', `Group for ${nameOf(d)}`);
+    grp.append(...[['', 'No group'], ...names.map(n => [n, n]), [NEW_GROUP, 'New group…']].map(([v, t]) => Object.assign(el('option'), { value: v, textContent: t })));
+    grp.value = groupOf(d);
+    grp.onchange = () => {
+      const g = grp.value === NEW_GROUP ? prompt('Name the group')?.trim().slice(0, 24) : grp.value;
+      if (grp.value === NEW_GROUP && !g) return drawLights();   // cancelled
+      setGroup(d, g);
+    };
+    const off = el('button', 'link off', 'Disconnect');
+    off.disabled = updating;
+    off.onclick = async () => {   // and forget it, so the page doesn't connect it again by itself: Connect another brings it back
+      boards.delete(d); d.gatt.disconnect();
+      try { await d.forget?.(); } catch (e) {}
+      render(); drawLights();
+    };
+    row.querySelector('.meta').append(grp, off);
+    const find = el('button', 'small', 'Find');
+    find.onclick = () => identify(d, b).catch(() => {});
+    row.append(find);
+    if (needsUpdate(b)) { const up = el('button', 'small go', 'Update'); up.onclick = () => { $('lightsheet').close(); openSettings(); }; row.append(up); }
+    return row;
+  }), ...heardNow().map(h => {
+    const row = lightRow(h, h), via = h.via.filter(d => boards.has(d)), about = el('div', 'info');
+    about.textContent = `${TYPES[h.type] || 'Lumi'}, version ${h.ver}${needsUpdate(h) ? ': connect it to update' : ''}. ` +
+      `Heard through ${via.map(nameOf).join(' and ')}${h.paired ? '' : `, not paired with ${via.length > 1 ? 'them' : 'it'}`}.`;
+    about.classList.toggle('warn', needsUpdate(h));
+    row.querySelector('.meta').append(about);
+    const find = el('button', 'small', 'Find'), join = el('button', 'small', 'Connect');
+    find.onclick = () => findHeard(h).catch(() => {});
+    join.onclick = () => pickBoard('Lumi ' + h.id).then(drawLights);   // connected, it gets a group box
+    row.append(find, join);
+    return row;
+  }));
+  if (!boards.size) $('lightrows').append(el('div', 'empty', 'No lights connected.'));
+}
+function refreshBatteries() { if (!updating) { for (const b of boards.values()) boardInfo(b).then(render); pollHeard(); } }
+setInterval(refreshBatteries, 60000);
+$('lights').onclick = () => { drawLights(); $('lightsheet').showModal(); refreshBatteries(); };
+$('lights-add').onclick = () => pickBoard().then(drawLights);
+$('lights-close').onclick = () => $('lightsheet').close();
+function drawFwBoards() {
+  const rows = [...boards].map(([d, b]) => {
+    const row = el('div', 'fwrow', `<div class="meta"><div class="name"></div><div class="info"></div></div>`);
+    row.querySelector('.name').textContent = nameOf(d);
+    const info = row.querySelector('.info');
+    const L = latest[typeOf(b)], usbOnly = b.ver != null && b.ver < BT_SAFE, current = L && b.ver >= L.version;
+    const kind = TYPES[typeOf(b)] + (b.type ? '' : ' (assumed: its firmware doesn’t say)');
+    info.textContent = b.ver == null ? 'Checking…' : usbOnly ? `${b.ver ? `Version ${b.ver}` : 'Older firmware'}: flash it over USB once (a Bluetooth update can freeze it until its power is cut), then it updates here`
+      : `${kind}. ` + (current ? `Up to date (version ${b.ver})` : L ? `Version ${b.ver}; version ${L.version} is available` : `Version ${b.ver}; no build published for it`);
+    info.classList.toggle('warn', usbOnly || (!!L && !current));
+    const find = el('button', 'small', 'Find');
+    find.disabled = updating;
+    find.onclick = async () => { find.disabled = true; const own = await identify(d, b).catch(() => false); if (!own) $('ustatus').textContent = `${nameOf(d)} has older firmware, so it blinked by switching off and on. Its partner may have followed.`; find.disabled = updating; };
+    const up = el('button', 'small' + (!usbOnly && !current ? ' go' : ''), current ? 'Reinstall' : 'Update');
+    up.disabled = updating || usbOnly || (!L && !$('fw').files[0]);
+    up.onclick = () => updateBoard(d, b);
+    row.append(find, up);
+    return row;
+  });
+  $('fwboards').replaceChildren(...(rows.length ? rows : [el('div', 'empty', 'Connect a board with + to update it.')]));
+}
+
+async function otaOne(dev, b, img) {
+  const name = nameOf(dev), status = t => $('ustatus').textContent = `${name}: ${t}`;
+  const ota = await otaChar(b);
+  if (!ota) throw new Error(`${name} can’t update over Bluetooth yet. Flash it over USB once`);
+  if (!(b.ver >= BT_SAFE)) throw new Error(`${name} is on version ${b.ver}, whose restart can freeze it until its power is cut. Flash it over USB once`);
+  // Below Low and off USB, no update: a cell run down by hours of retries may be why a ball stayed dark after its
+  // update's restart (2026-10-30). Read it now: the reading from when it connected can be hours old
+  await boardInfo(b);
+  const bt = battOf(b);
+  if (bt && bt[2] < 2 && !b.usb) throw new Error(`${name}’s battery is ${bt[1].toLowerCase()}. Charge it, or plug it into USB, before updating`);
+  const code = async () => (await answer(ota)).getUint8(0);
+  const hold = async msg => {   // until its update window is open, flashing the board green so you know which one
+    for (let t = 0; ; t++) {
+      if (t % 3 === 0) await ota.writeValueWithResponse(otaCmd(0x85)).then(() => answer(ota)).catch(() => {});
+      await ota.writeValueWithResponse(otaCmd(0x84, 0, new Array(14).fill(0)));
+      if ((await answer(ota)).getUint8(9)) return;
+      if (t > 120) throw new Error('nobody held the button');
+      status(msg);
+      await sleep(1000);
+    }
+  };
+  await hold('hold the button on the board flashing green for 5 seconds, until it blinks purple');
+  const addr0 = IMAGE_A / 16, blocks = Math.ceil(img.length / BLOCK), kb = Math.round(img.length / 1024);
+  const erase = async (k, n) => {   // n 4K blocks from block k; also clears the board's "a check failed" flag
+    await ota.writeValueWithResponse(otaCmd(0x81, addr0 + k * BLOCK / 16, [n & 255, n >> 8]));
+    if (await code()) throw new Error('erasing failed');
+  };
+  const block = async (op, k, sure) => {   // PROG or VERIFY block k, then the board's answer: VERIFY's is "any mismatch since the last erase"
+    const end = Math.min(img.length, (k + 1) * BLOCK);
+    for (let off = k * BLOCK; off < end; off += CHUNK) {
+      const cmd = otaCmd(op, addr0 + off / 16, [...img.subarray(off, off + CHUNK)]);
+      await (sure ? ota.writeValueWithResponse(cmd) : ota.writeValueWithoutResponse(cmd));
+      if (!sure && (off + CHUNK) % 1024 === 0 && off + CHUNK < end) await answer(ota);   // every 1 KB the board catches up
+    }
+    return code();
+  };
+  status('erasing');
+  await erase(0, blocks);
+  // A write without reply can go missing unannounced (DED6 2026-10-27: "the image arrived damaged"), so a block sent that
+  // way is checked twice (a lost check write checks nothing) and sent again if it doesn't match. A confirmed write can't
+  // go missing, so a block sent confirmed needs no check. Which is quicker depends on the phone: on Android (2026-10-30)
+  // a write without reply took ~38 ms, so sending plus two checks took 30 s per 4 KB, and a confirmed write should cost
+  // at most two of them; on a Mac writes without reply are far quicker. So block 0 goes without reply, block 1
+  // confirmed, and the rest whichever was quicker. Only an erase clears the board's mismatch flag
+  const t0 = performance.now(), took = [];
+  for (let k = 0, again = 0; k < blocks;) {
+    const left = k > 1 ? `, about ${Math.ceil((performance.now() - t0) / k * (blocks - k) / 60000)} min left` : '';
+    $('uprog').value = k / blocks; status(`sending ${Math.round(k * BLOCK / 1024)} of ${kb} KB${left}. Keep this page open`);
+    const sure = again > 1 || k === 1 || k > 1 && took[1] < 3 * took[0], t = performance.now();
+    let c = await block(0x80, k, sure);
+    if (k < 2 && !again) took[k] = performance.now() - t;
+    if (!c && !sure) c = (await block(0x82, k), await block(0x82, k));
+    if (!c) { k++; again = 0; continue; }
+    if (c === 0xfd) await hold(`its update window closed at ${Math.round(k * BLOCK / 1024)} KB. Hold its button for 5 seconds again to carry on`);
+    else if (++again > 5) throw new Error('the image kept arriving damaged. Bring the phone closer and try again');
+    await erase(k, 1);
+  }
+  // END with a reply, so the phone makes sure it arrives: a lost one leaves the board blinking purple until its window
+  // times out, as on 2026-10-29. A board that takes it restarts at once and never answers; one that answers refused it.
+  // 40 s each, not the old 8: a phone can take 20 s to notice the link is gone
+  status('restarting into the new firmware');
+  const gone = new Promise(r => dev.addEventListener('gattserverdisconnected', () => r('gone'), { once: true }));
+  for (let t = 0; t < 3; t++) {
+    const r = await Promise.race([gone, sleep(40000).then(() => 'quiet'),
+      ota.writeValueWithResponse(otaCmd(0x83, 0, [0, 0])).then(() => 'answered', () => 'failed')]);
+    if (r === 'gone' || !dev.gatt.connected) return;   // a restart, which the reconnect then checks
+    if (r === 'answered') throw new Error(await code() === 0xfd ? 'its update window closed before the last step' : 'its last check failed');
+    await sleep(500);   // the phone was busy: again
+  }
+  throw new Error(`${name} didn’t take the last step. Try Update again`);
+}
+
+// Each board type's latest build is published next to this page (make BLE=1 publish): firmware/<type>.bin + <type>.json.
+// The type is also stamped in the image (BOARD_TYPE in firmware/ble.c), so a board only ever gets an image built for it.
+const TYPES = ['', 'nanoCH57x', 'nanoCH57x with accelerometer', 'Lumi R3', 'Lumi R3A', 'Lumi R3D', 'Lumi R3DA', 'Lumi R4C/R4S'];
+const LEGACY = 4;   // boards from before types (version 4 and older) don't say; the ones in use are all Lumi R3A
+const typeOf = b => b.type || LEGACY;
+const latest = {};  // board type -> its published build, null when there isn't one
+const hexOf = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+const tagOf = img => { const i = new TextDecoder('latin1').decode(img).indexOf('LUMI-BOARD='); return i < 0 ? 0 : img[i + 11]; };
+async function checkLatest() {
+  for (const t of new Set([...boards.values(), ...rfLights.values()].map(typeOf)))
+    try { latest[t] = await (await fetch(`firmware/${t}.json`, { cache: 'no-store' })).json(); } catch (e) { latest[t] = null; }
+  drawFwBoards(); render();
+}
+$('fw').onchange = drawFwBoards;
+async function firmwareImage(b) {   // the picked file, or this board type's published build checked against its manifest
+  const f = $('fw').files[0];
+  if (f) return { img: new Uint8Array(await f.arrayBuffer()), name: f.name };
+  const t = typeOf(b), L = latest[t];
+  $('ustatus').textContent = 'Downloading the latest firmware…';
+  const buf = await (await fetch(`firmware/${t}.bin?${L.sha256}`, { cache: 'no-store' })).arrayBuffer();
+  if (buf.byteLength !== L.size || hexOf(await crypto.subtle.digest('SHA-256', buf)) !== L.sha256)
+    throw new Error('the download was damaged. Check the connection and try again');
+  return { img: new Uint8Array(buf), name: 'the latest firmware' };
+}
+async function updateBoard(dev, b) {
+  let img, name;
+  try { ({ img, name } = await firmwareImage(b)); }
+  catch (e) { return $('ustatus').textContent = `Update stopped: ${e.message}.`; }
+  if (img.length < 4096 || img.length > IMAGE_MAX) return $('ustatus').textContent = `${name} isn’t a Lumi firmware image (${img.length} bytes; the limit is ${IMAGE_MAX}).`;
+  const tag = tagOf(img);   // the one check every image passes, published or picked: the wrong board's build breaks its LED and button pins
+  if (tag !== typeOf(b)) return $('ustatus').textContent = `${name} is ${tag ? `built for a ${TYPES[tag] || `type ${tag} board`}` : 'from before board types'}, and ${nameOf(dev)} is a ${TYPES[typeOf(b)]}. Nothing was sent.`;
+  const padded = new Uint8Array(Math.ceil(img.length / CHUNK) * CHUNK).fill(0xff); padded.set(img); img = padded;
+  stopPlaylist();
+  updating = true; drawFwBoards(); $('uprog').hidden = false; $('uprog').value = 0;
+  // The page stops while the screen is off or it's in the background, and the update with it: keep the screen on
+  let lock = null, hid = false;
+  const awake = () => { if (document.hidden) hid = true; else navigator.wakeLock?.request('screen').then(l => lock = l, () => {}); };
+  awake(); document.addEventListener('visibilitychange', awake);
+  try {
+    await b.busy; await otaOne(dev, b, img);
+    $('ustatus').textContent = `${nameOf(dev)} is restarting with the new firmware. Reconnecting…`;
+    await sleep(5000);
+    await reconnectKnown();
+    const back = boards.get(dev);
+    $('ustatus').textContent = !back ? `${nameOf(dev)} restarted. Reconnect it with + and check it says up to date.`
+      : back.ver >= (latest[typeOf(back)]?.version ?? 0) ? `${nameOf(dev)} is up to date (version ${back.ver}).` : `${nameOf(dev)} restarted but is still on version ${back.ver}. The update didn’t take.`;
+  } catch (e) {
+    $('ustatus').textContent = `Update stopped: ${e.message}. ` +
+      (hid ? 'The page was in the background, which pauses the update: keep it open on screen until it’s done. ' : '') + 'The board keeps its old firmware.';
+  }
+  document.removeEventListener('visibilitychange', awake); lock?.release().catch(() => {});
+  updating = false; $('uprog').hidden = true; drawFwBoards();
+}
+
+buildModes(); render(); requestAnimationFrame(tick);
+navigator.bluetooth?.getDevices?.().then(ds => ds.forEach(moveName)).catch(() => {});   // remembered lights' names, before any is heard on the radio
+reconnectKnown().then(pollHeard).catch(() => {});   // boards you've used before connect as soon as the page opens
+</script>
+</body>
+</html>
