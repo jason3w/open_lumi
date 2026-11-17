@@ -62,9 +62,14 @@
   #orb:active { transform: scale(.96); }
   #orb.off { background: radial-gradient(circle at 50% 42%, var(--line) 0, var(--raised) 34%, var(--raised) 48%, transparent 71%); }
   #orb.off::after { opacity: 0; }
+  #orb.linking { animation: linking .9s ease-in-out infinite alternate; }   /* a connection attempt is running */
+  #orb.linking::before { content: ""; position: absolute; inset: 6%; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--muted); animation: spin 1s linear infinite; }
+  @keyframes linking { from { opacity: .45; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
   #now { margin-top: 6px; font-size: 24px; font-weight: 800; letter-spacing: -.01em; text-align: center; }
   #sub { font-size: 13px; color: var(--muted); min-height: 19px; text-align: center; padding: 0 16px; }
   #sub.err { color: var(--danger); }
+  #sub.busy { color: inherit; font-weight: 600; }
 
   /* sliders */
   .sliders { display: grid; gap: 4px; margin: 14px 0 6px; }
@@ -197,7 +202,7 @@
   .tile .n { position: absolute; top: 4px; left: 6px; font-size: 11px; font-weight: 800; color: var(--glow); }
   .tile.off { opacity: .45; }
 
-  @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } #orb { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } #orb { transition: none; } #orb.linking, #orb.linking::before { animation: none; } #orb.linking::before { border-color: var(--muted); } }
 </style>
 </head>
 <body>
@@ -580,7 +585,8 @@ function renderTop() {
   $('ctl').hidden = !boards.size;
   $('orb').setAttribute('aria-label', !boards.size ? 'Connect' : st.on ? 'Turn off' : 'Turn on');
   $('sub').classList.toggle('err', !NO_BT && !linkMsg && !!note && noteErr);
-  if (!boards.size) { $('now').textContent = 'Not connected'; $('sub').textContent = NO_BT || linkMsg || note || 'Tap the light to connect your boards'; return; }
+  $('orb').classList.toggle('linking', !!linkMsg); $('sub').classList.toggle('busy', !!linkMsg);
+  if (!boards.size) { $('now').textContent = linkMsg ? 'Connecting…' : 'Not connected'; $('sub').textContent = NO_BT || linkMsg || note || 'Tap the light to connect your boards'; return; }
   const n = custom[0] & 15, m = made.find(isLook), here = [...boards.keys()].filter(inSel).length;
   $('now').textContent = !st.on ? 'Off' : m ? m.name : n ? 'Your own light' : modeName(st.mode);
   $('sub').textContent = linkMsg || note || (!st.on ? 'Tap the light to turn it on' : playing ? `Playing ${playing.name}`
@@ -605,7 +611,7 @@ for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => { t
 $('editmine').onclick = () => { editingMine = !editingMine; renderMine(); };
 
 // ---- controls ----
-$('orb').onclick = () => boards.size ? (stopPlaylist(), send({ on: st.on ? 0 : 1 })) : connect();
+$('orb').onclick = () => boards.size ? (stopPlaylist(), send({ on: st.on ? 0 : 1 })) : linkMsg || connect();   // already connecting: a tap doesn't queue another pass
 $('add').onclick = pickBoard;
 for (const [id, key, reset] of [['bright', 'bright'], ['hue', 'hue', 0], ['speed', 'speed', 128]]) {
   $(id).oninput = e => { st[key] = +e.target.value; renderSliders(); if (key === 'hue') renderModes(); };   // preview while dragging
@@ -634,6 +640,7 @@ async function attach(dev) {   // connect one board and join it to the others
   moveName(dev);
   dev.ongattserverdisconnected = () => { if (boards.delete(dev)) { render(); comeBack(dev); } };   // not for Disconnect or a failed try: those take it off the list first
   const srv = await dev.gatt.connect();
+  if (linkMsg) { linkMsg = `${nameOf(dev)} answered. Reading its settings…`; render(); }
   const ch = await (await srv.getPrimaryService(SERVICE)).getCharacteristic(CHAR);
   ch.addEventListener('characteristicvaluechanged', e => onNotify(dev, e.target.value));
   await ch.startNotifications();
